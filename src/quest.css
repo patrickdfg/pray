@@ -1662,3 +1662,18 @@ button:disabled { cursor: not-allowed; }
 @media (prefers-reduced-motion: reduce) {
   .primary,.nav-item,.entry { transition: none; }
 }
+
+
+/* Only the specific entry that just received a prayer/action is emphasized. */
+.entry.just-recorded {
+  border-color: #a8c5a3;
+  background: #f8fcf5;
+}
+.entry.just-recorded .entry-foot {
+  color: #336a47;
+  font-weight: 600;
+}
+.record[aria-busy="true"] {
+  background: #dcebd5;
+  border-color: #a8c5a3;
+}
