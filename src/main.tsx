@@ -701,7 +701,7 @@ function App() {
                       <i />
                     </div>
                     <img
-                      src="/sheep-hero.webp"
+                      src={`${import.meta.env.BASE_URL}sheep-hero.webp`}
                       alt="별 지팡이와 하트 방패를 든 아기 양 모험가 소망이"
                     />
                   </div>
@@ -712,7 +712,10 @@ function App() {
                     <div className="hp-bar enemy-hp">
                       <i style={{ width: Math.max(0, 100 - progress) + "%" }} />
                     </div>
-                    <img src="/slime.webp" alt="통통한 파란색 미루기 슬라임" />
+                    <img
+                      src={`${import.meta.env.BASE_URL}slime.webp`}
+                      alt="통통한 파란색 미루기 슬라임"
+                    />
                   </div>
                   {battle > 0 && (
                     <>
@@ -1064,7 +1067,7 @@ function App() {
                 <h3>나의 캐릭터 · 소망이</h3>
                 <div className="pet-picture">
                   <img
-                    src="/sheep-hero.webp"
+                    src={`${import.meta.env.BASE_URL}sheep-hero.webp`}
                     alt="하트 방패를 든 모험가 소망이"
                   />
                 </div>
