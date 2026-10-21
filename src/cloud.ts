@@ -3,6 +3,7 @@ import {
   getAuth,
   GoogleAuthProvider,
   signInWithPopup,
+  signInWithRedirect,
   signOut,
   onAuthStateChanged,
 } from "firebase/auth";
@@ -37,14 +38,22 @@ const db = app ? getFirestore(app) : null;
 if (auth) auth.languageCode = "ko";
 const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: "select_account" });
-export const login = () =>
-  auth
-    ? signInWithPopup(auth, googleProvider)
-    : Promise.reject(
-        Error(
-          "Firebase 연결 후 Google 로그인을 사용할 수 있어요. 지금은 체험 모드예요.",
-        ),
-      );
+// Keep Google's account selector visible. Some Android browsers block popups;
+// fall back to a full-page Google sign-in flow in that case.
+export const login = async () => {
+  if (!auth)
+    throw Error("Firebase 연결 후 Google 로그인을 사용할 수 있어요. 지금은 체험 모드예요.");
+  try {
+    return await signInWithPopup(auth, googleProvider);
+  } catch (error) {
+    const code = (error as { code?: string })?.code;
+    if (code === "auth/popup-blocked" || code === "auth/cancelled-popup-request") {
+      await signInWithRedirect(auth, googleProvider);
+      return null;
+    }
+    throw error;
+  }
+};
 export const logout = () => (auth ? signOut(auth) : Promise.resolve());
 export const watchAuth = (fn: Parameters<typeof onAuthStateChanged>[1]) =>
   auth ? onAuthStateChanged(auth, fn) : () => {};
