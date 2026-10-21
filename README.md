@@ -145,7 +145,7 @@ npm run test:browser
 - Chrome 브라우저: 등록, 기록, 공격 효과, 댓글, 완료, 보관함, 비밀 저장·새로고침, 모바일 화면, 초대 안내, 아이템 구매.
 - GitHub Actions: 단위 테스트, 프로덕션 빌드, Java 21 기반 규칙 통합 테스트.
 
-실제 Google OAuth와 운영 Firestore 연결은 Firebase 프로젝트를 연결한 뒤 별도로 확인해야 합니다.
+운영 주소에서 실제 Google 로그인과 첫 가입 프로필의 Firestore 저장을 확인했습니다. 별도의 Google 계정 두 개를 사용하는 팀 초대·공유 운영 점검은 추가로 진행할 수 있습니다. `tests/auth-browser.cjs`는 실제 배포의 가입 버튼과 모바일 진입 화면을 확인하며 Google 계정 인증을 자동으로 대신하지 않습니다.
 
 ## 주요 파일
 
