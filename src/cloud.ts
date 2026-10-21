@@ -16,12 +16,14 @@ import {
 } from "firebase/firestore";
 import { createSparkCommand, normalize } from "./spark";
 const env = import.meta.env;
-export const connected = !!(
-  env.VITE_FIREBASE_API_KEY &&
-  env.VITE_FIREBASE_PROJECT_ID &&
-  env.VITE_FIREBASE_APP_ID &&
-  env.VITE_FIREBASE_AUTH_DOMAIN
-);
+export const connected =
+  !new URLSearchParams(location.search).has("demo") &&
+  !!(
+    env.VITE_FIREBASE_API_KEY &&
+    env.VITE_FIREBASE_PROJECT_ID &&
+    env.VITE_FIREBASE_APP_ID &&
+    env.VITE_FIREBASE_AUTH_DOMAIN
+  );
 const app = connected
   ? initializeApp({
       apiKey: env.VITE_FIREBASE_API_KEY,
@@ -32,9 +34,12 @@ const app = connected
   : null;
 const auth = app ? getAuth(app) : null;
 const db = app ? getFirestore(app) : null;
+if (auth) auth.languageCode = "ko";
+const googleProvider = new GoogleAuthProvider();
+googleProvider.setCustomParameters({ prompt: "select_account" });
 export const login = () =>
   auth
-    ? signInWithPopup(auth, new GoogleAuthProvider())
+    ? signInWithPopup(auth, googleProvider)
     : Promise.reject(
         Error(
           "Firebase 연결 후 Google 로그인을 사용할 수 있어요. 지금은 체험 모드예요.",

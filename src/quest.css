@@ -1235,3 +1235,78 @@ textarea:focus {
     animation: none;
   }
 }
+.google-login {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 2px solid #c8d8ef;
+  background: #fff;
+  border-radius: 10px;
+  padding: 8px 11px;
+  box-shadow: 0 2px 0 #d6e4f5;
+  color: #3d577b;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.google-g {
+  font-family: Arial, sans-serif;
+  font-size: 18px;
+  font-weight: 800;
+  background: conic-gradient(
+    #4285f4 0deg 110deg,
+    #34a853 110deg 185deg,
+    #fbbc05 185deg 240deg,
+    #ea4335 240deg 300deg,
+    #4285f4 300deg
+  );
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+}
+.google-short {
+  display: none;
+}
+.google-info {
+  border: 1px solid #c6dcfa;
+  background: #eef6ff;
+  padding: 15px;
+  border-radius: 12px;
+  color: #4d709f;
+  margin-top: 17px;
+}
+.google-info strong {
+  font-size: 13px;
+}
+.google-info p {
+  font-size: 11px;
+  line-height: 1.8;
+  margin-top: 8px;
+  color: #7b94b5;
+}
+@media (max-width: 700px) {
+  .google-label {
+    display: none;
+  }
+  .google-short {
+    display: inline;
+  }
+  .google-login {
+    font-size: 9px;
+    padding: 6px;
+    gap: 4px;
+  }
+  .header-right {
+    gap: 5px;
+  }
+  .header-right .mode {
+    display: none;
+  }
+  .breadcrumb {
+    font-size: 7px;
+    gap: 3px;
+  }
+  .google-g {
+    font-size: 15px;
+  }
+}

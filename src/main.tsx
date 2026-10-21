@@ -51,8 +51,23 @@ import {
 import "./style.css";
 import "./quest.css";
 const uid = () => crypto.randomUUID();
-const escError = (e: unknown) =>
-  e instanceof Error ? e.message : "저장하지 못했어요. 다시 시도해 주세요.";
+const escError = (e: unknown) => {
+  const messages: Record<string, string> = {
+    "auth/popup-closed-by-user": "Google 로그인을 취소했어요.",
+    "auth/popup-blocked": "팝업을 허용한 뒤 Google 로그인을 다시 눌러 주세요.",
+    "auth/unauthorized-domain":
+      "현재 주소의 Google 로그인 연결을 확인하고 있어요.",
+    "auth/operation-not-allowed": "Google 로그인 제공자 설정이 필요해요.",
+    "auth/network-request-failed":
+      "연결을 확인하고 Google 로그인을 다시 시도해 주세요.",
+    "resource-exhausted":
+      "무료 서비스 한도에 도달했어요. 잠시 후 다시 이용해 주세요.",
+  };
+  return (
+    messages[(e as { code?: string })?.code || ""] ||
+    (e instanceof Error ? e.message : "저장하지 못했어요. 다시 시도해 주세요.")
+  );
+};
 function read<T>(key: string, fallback: T): T {
   try {
     return JSON.parse(localStorage.getItem(key) || "null") ?? fallback;
@@ -497,7 +512,9 @@ function App() {
               <small>
                 {signed
                   ? "Google 계정으로 함께해요"
-                  : "기기에 저장되는 체험 모드"}
+                  : connected
+                    ? "Google로 가입·로그인"
+                    : "기기에 저장되는 체험 모드"}
               </small>
             </div>
             {signed ? (
@@ -540,6 +557,26 @@ function App() {
             <b>{nav.find((n) => n[0] === tab)?.[1]}</b>
           </div>
           <div className="header-right">
+            {!signed && (
+              <button
+                className="google-login"
+                aria-label="Google로 가입·로그인"
+                disabled={busy || !loaded}
+                onClick={() => {
+                  if (!connected) setModal("setup");
+                  else
+                    run(async () => {
+                      await login();
+                    });
+                }}
+              >
+                <span className="google-g" aria-hidden="true">
+                  G
+                </span>
+                <span className="google-label">Google로 가입·로그인</span>
+                <span className="google-short">Google로 시작</span>
+              </button>
+            )}
             <span className="mode">
               {connected
                 ? signed
@@ -591,7 +628,7 @@ function App() {
                   })
                 }
               >
-                Google로 시작
+                Google로 가입·로그인
               </button>
             </div>
           )}
@@ -1319,6 +1356,13 @@ function App() {
               <>
                 <span className="modal-emoji">🌿</span>
                 <h2>나의 숲 안내</h2>
+                <div className="google-info">
+                  <strong>Google 계정 하나로 시작해요</strong>
+                  <p>
+                    처음 로그인하면 자동으로 가입되고 프로필이 만들어져요.
+                    다음부터는 같은 Google 계정으로 로그인하면 돼요.
+                  </p>
+                </div>
                 <p>
                   {connected
                     ? "Firebase가 연결되어 있어요."

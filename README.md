@@ -2,7 +2,9 @@
 
 기도와 할 일을 퀘스트로 기록하는 귀여운 캐릭터 게임형 모바일 웹 앱입니다. 아기 양 모험가 **소망이**, 파란 **미루기 슬라임**, 체력바, 공격 동작, 경험치, 레벨, 코인과 수집 아이템이 등장합니다.
 
-**[공개 체험 앱 열기](https://patrickdfg.github.io/pray/)** — GitHub Pages에 배포되어 있습니다. 현재는 기기별 체험 모드이며 실제 Google 로그인·팀 공유는 아래 Firebase 연결 후 가능합니다.
+**[기도숲 앱 열기](https://patrickdfg.github.io/pray/)** — GitHub Pages에 배포되어 있습니다. **Google로 가입·로그인**을 누르면 Google 계정으로 시작합니다. 처음 로그인할 때 프로필을 자동 생성하고, 다음부터는 같은 계정으로 로그인합니다. 이메일/비밀번호 가입은 제공하지 않습니다.
+
+계정 없이 둘러보려면 **[체험 모드](https://patrickdfg.github.io/pray/?demo=1)**를 사용합니다. 체험 기록은 브라우저에만 저장되며 실제 팀 데이터와 분리됩니다.
 
 `main` 브랜치에 코드를 올리면 GitHub Actions에서 빌드와 규칙 테스트를 통과한 뒤 Pages에 자동 배포됩니다. Pages 빌드만 `/pray/` 경로를 사용하며 Firebase Hosting 빌드는 루트 경로를 사용합니다. 공개 주소에서도 등록·기록·댓글·마무리·비밀 저장·모바일 화면·보상 구매를 브라우저로 검증했습니다.
 
@@ -17,7 +19,7 @@
 - Firestore Security Rules + 클라이언트 트랜잭션: 가입 관계·동시 기록·보상·접근 권한 검증
 - 기기 브라우저 `localStorage`: 비밀 기도·비밀 할 일
 
-**현재는 Firebase 프로젝트가 연결되지 않은 체험 모드입니다.** 실제 Google 계정 간 동작과 운영 배포는 프로젝트 연결 후 확인해야 합니다. 체험 데이터는 현재 브라우저에만 저장되며 실제 팀 공유가 아닙니다.
+운영 Firebase 프로젝트는 `pray-quest`입니다. Google Authentication과 서울 리전 Firestore Standard를 사용합니다. 웹 앱 공개 구성은 GitHub Actions 저장소 변수 네 개로 전달하며, 서비스 계정 비밀키는 배포하지 않습니다. 환경변수가 없는 로컬 실행은 자동으로 체험 모드가 됩니다.
 
 Spark는 서비스별 무료 한도가 있습니다. 전체 프로젝트의 무료 할당량을 소진하면 요청이 거부되거나 서비스가 일시 제한될 수 있습니다. 프로젝트를 Spark로 유지하고 결제 계정을 연결하지 않으면 유료 초과 사용으로 자동 전환되지 않습니다. 아래 앱 자체의 제한은 사용량을 줄이는 장치이며, Firebase 전체 무료 할당량 안에서 항상 서비스가 계속된다는 보장은 아닙니다.
 
@@ -109,6 +111,8 @@ npx firebase-tools deploy --project YOUR_PROJECT_ID --only firestore:rules,hosti
 
 6. Authentication 승인된 도메인에서 Hosting 도메인을 확인합니다. 로컬 로그인 테스트에는 `localhost`도 확인합니다.
 7. 서로 다른 Google 계정 두 개로 팀 생성 → 초대 → 가입 → 공유 → 각자 기록과 마무리를 확인합니다.
+
+GitHub Pages 빌드는 저장소의 **Settings → Secrets and variables → Actions → Variables**에서 `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_APP_ID`를 읽습니다. 이 값들은 브라우저용 공개 구성입니다. `.env.local`은 Git에 올리지 않습니다. Firebase Authentication 승인된 도메인에는 `patrickdfg.github.io`가 포함되어야 합니다.
 
 환경변수를 바꾸면 개발 서버 재시작 또는 재빌드가 필요합니다. 프런트엔드와 같은 버전의 `firestore.rules`를 함께 배포해야 합니다. 이전 Cloud Functions 버전의 실제 데이터를 연결했던 경우 스키마 마이그레이션이 필요하며, 새 Spark 프로젝트를 기본 대상으로 합니다.
 
