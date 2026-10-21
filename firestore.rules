@@ -1,0 +1,17 @@
+rules_version = '2';
+service cloud.firestore {
+ match /databases/{database}/documents {
+  function signed() { return request.auth != null; }
+  function member(team) { return signed() && exists(/databases/$(database)/documents/teams/$(team)/members/$(request.auth.uid)); }
+  match /profiles/{uid} { allow read: if signed() && request.auth.uid == uid; allow write: if false; }
+  match /teams/{team} {
+   allow read: if member(team); allow write: if false;
+   match /members/{uid} { allow read: if member(team); allow write: if false; }
+   match /items/{item} {
+    allow read: if member(team); allow write: if false;
+    match /{nested=**} { allow read, write: if false; }
+   }
+  }
+  match /{document=**} { allow read, write: if false; }
+ }
+}
