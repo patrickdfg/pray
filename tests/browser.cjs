@@ -26,9 +26,25 @@ const assert = require("node:assert/strict");
     .getByPlaceholder("자세한 내용, 함께 나누고 싶은 마음…")
     .fill("감사와 소망의 상세 이야기");
   await page.getByRole("button", { name: "퀘스트 등록", exact: true }).click();
+  const untouchedPrayer = page.locator(".entry").filter({
+    hasText: "우리 가족이 평안한 하루를 보내도록",
+  });
+  const untouchedCount = await untouchedPrayer.locator(".entry-foot").innerText();
+  const targetPrayer = page.locator(".entry").filter({ hasText: "테스트 기도" });
   await page
     .getByRole("button", { name: "테스트 기도 기도 기록", exact: true })
     .click();
+  assert.equal(
+    await untouchedPrayer.locator(".entry-foot").innerText(),
+    untouchedCount,
+    "clicking one prayer must not increment another prayer",
+  );
+  assert.match(
+    await targetPrayer.locator(".entry-foot").innerText(),
+    /기도 1번/,
+    "only the selected prayer's count increases",
+  );
+  assert.equal(await page.locator(".entry.just-recorded").count(), 1);
   assert.equal(await page.locator(".battle-scene.has-battled").count(), 1);
   assert.equal(
     await page.locator(".hero-copy .bar i").evaluate((el) => el.style.width),
