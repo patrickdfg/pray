@@ -445,6 +445,13 @@ function App() {
   ] as const;
   return (
     <div className="layout">
+      {menu && (
+        <button
+          className="menu-scrim"
+          aria-label="메뉴 닫기"
+          onClick={() => setMenu(false)}
+        />
+      )}
       <aside className={menu ? "sidebar open" : "sidebar"}>
         <a
           className="brand"
@@ -455,10 +462,10 @@ function App() {
           }}
         >
           <span className="brand-icon">
-            <Swords size={24} />
+            <Leaf size={24} />
           </span>
           <span>
-            기도숲<small>PRAY QUEST · LEVEL UP</small>
+            기도숲<small>A LITTLE PRAYER, EVERY DAY</small>
           </span>
         </a>
         <div className="team-switch">
@@ -471,12 +478,13 @@ function App() {
           </div>
           <ChevronRight size={16} />
         </div>
-        <p className="nav-label">나의 모험</p>
+        <p className="nav-label">나의 공간</p>
         <nav>
           {nav.map(([key, label, Icon]) => (
             <button
               key={key}
               className={tab === key ? "nav-item active" : "nav-item"}
+              aria-current={tab === key ? "page" : undefined}
               onClick={() => {
                 setTab(key);
                 setFilter("all");
@@ -495,11 +503,11 @@ function App() {
           <div className="little-note">
             <span>🌱</span>
             <strong>
-              기도 한 번에
+              작은 기도가 모여
               <br />
-              경험치가 쑥쑥!
+              울창한 숲이 돼요
             </strong>
-            <p>한 번의 실천도 경험치로!</p>
+            <p>오늘도 내 속도로, 한 걸음씩.</p>
           </div>
           <button className="settings" onClick={() => setModal("setup")}>
             <Settings size={18} />
@@ -547,13 +555,14 @@ function App() {
         <header>
           <button
             className="mobile-menu"
-            aria-label="메뉴 열기"
+            aria-label={menu ? "메뉴 접기" : "메뉴 열기"}
+            aria-expanded={menu}
             onClick={() => setMenu(!menu)}
           >
             <Menu />
           </button>
           <div className="breadcrumb">
-            나의 모험 <ChevronRight size={14} />{" "}
+            기도숲 <ChevronRight size={14} />{" "}
             <b>{nav.find((n) => n[0] === tab)?.[1]}</b>
           </div>
           <div className="header-right">
@@ -588,7 +597,11 @@ function App() {
               <Coins size={15} />
               {profile.coins} G
             </button>
-            <button className="header-avatar" onClick={() => setModal("setup")}>
+            <button
+              aria-label="내 계정 및 설정"
+              className="header-avatar"
+              onClick={() => setModal("setup")}
+            >
               🐑
             </button>
           </div>
@@ -646,13 +659,13 @@ function App() {
           <div className="page-heading">
             <div>
               <p className="eyebrow">
-                {today} <span>· 오늘도 경험치 획득!</span>
+                {today} <span>· 나를 위한 작은 시간</span>
               </p>
               <h1>
                 {tab === "home" ? (
                   <>
-                    {profile.name} 대원, 퀘스트 출발!{" "}
-                    <span className="wave">⚔️</span>
+                    {profile.name}님, 오늘도 한 걸음{" "}
+                    <span className="wave">🌿</span>
                   </>
                 ) : (
                   nav.find((n) => n[0] === tab)?.[1]
@@ -660,7 +673,7 @@ function App() {
               </h1>
               <p>
                 {tab === "home"
-                  ? "기도하고, 할 일 깨고, 내 캐릭터를 키워 보세요!"
+                  ? "마음을 담은 기도와 작은 실천으로, 오늘의 숲을 가꿔요."
                   : tab === "stats"
                     ? "레벨은 얼마나 올랐을까? 내 기록과 수집품을 확인해요."
                     : tab === "team"
@@ -686,18 +699,18 @@ function App() {
               <div className="hero quest-hero">
                 <div className="hero-copy">
                   <span className="pill">
-                    <Swords size={14} />
-                    DAILY PRAY QUEST
+                    <Leaf size={14} />
+                    YOUR GROWING FOREST
                   </span>
                   <h2>
-                    기도하고, 실천하고.
+                    작은 기도 하나,
                     <br />
-                    소망이와 레벨 업!
+                    소망이 자라요.
                   </h2>
                   <p>
-                    기도 한 번에 +10 XP!
+                    서두르지 않아도 괜찮아요.
                     <br />
-                    오늘의 미루기 슬라임을 물리쳐요.
+                    소망이와 함께 오늘의 마음을 기록해요.
                   </p>
                   <div className="level">
                     <span>
@@ -710,7 +723,7 @@ function App() {
                   </div>
                   <div className="quest-reward">
                     <Trophy size={14} />
-                    성실한 한 걸음이 나의 경험치!
+                    기도와 실천을 기록하면 +10 XP
                   </div>
                 </div>
                 <div
@@ -719,8 +732,8 @@ function App() {
                   aria-label="소망이와 슬라임의 퀘스트 장면"
                 >
                   <div className="stage-tag">
-                    ⚑ STAGE {String(level).padStart(2, "0")}{" "}
-                    <span>꾸준함의 초원</span>
+                    여정 {String(level).padStart(2, "0")}{" "}
+                    <span>소망이의 초원</span>
                   </div>
                   <div className="cloud c1" />
                   <div className="cloud c2" />
@@ -763,7 +776,7 @@ function App() {
                   <div className="battle-tip">
                     {battle
                       ? "NICE! 경험치를 획득했어요 ✨"
-                      : "아래 퀘스트를 누르면 모험이 시작돼요!"}
+                      : "오늘의 작은 실천이 소망이를 자라게 해요"}
                   </div>
                 </div>
                 <div className="garden-decorations">
@@ -786,14 +799,14 @@ function App() {
                 />
                 <Metric
                   icon={<Check />}
-                  label="오늘의 퀘스트 기록"
+                  label="오늘의 기록"
                   value={`${todayCount}개`}
                   note="작은 실천도 충분히 소중해요"
                   color="green"
                 />
                 <Metric
                   icon={<Flower2 />}
-                  label="감사로 남긴 이야기"
+                  label="감사의 이야기"
                   value={`${summary.done}개`}
                   note="우리에게 찾아온 작은 변화"
                   color="gold"
@@ -840,6 +853,7 @@ function App() {
                         key={key}
                         onClick={() => setFilter(key)}
                         className={filter === key ? "selected" : ""}
+                        aria-pressed={filter === key}
                       >
                         {key === "secret" && <LockKeyhole size={13} />} {label}
                       </button>
@@ -1100,8 +1114,8 @@ function App() {
             </section>
             <aside className="right-rail">
               <div className="companion panel">
-                <span className="eyebrow">MY CHARACTER</span>
-                <h3>나의 캐릭터 · 소망이</h3>
+                <span className="eyebrow">MY COMPANION</span>
+                <h3>함께 자라는 소망이</h3>
                 <div className="pet-picture">
                   <img
                     src={`${import.meta.env.BASE_URL}sheep-hero.webp`}
@@ -1131,7 +1145,7 @@ function App() {
               </div>
               <div className="team-card panel">
                 <div className="section-title">
-                  <h3>우리 파티</h3>
+                  <h3>함께 가꾸는 숲</h3>
                   <button aria-label="팀 보기" onClick={() => setTab("team")}>
                     <ChevronRight size={17} />
                   </button>
@@ -1144,7 +1158,7 @@ function App() {
                   ))}
                   <small>{myMembers.length}명이 함께해요</small>
                 </div>
-                <p>함께하면 더 신나는 모험!</p>
+                <p>서로의 기도에 마음을 보태요.</p>
                 <button className="secondary" onClick={makeInvite}>
                   <Users size={15} />
                   함께할 친구 초대하기

@@ -25,6 +25,10 @@ Spark는 서비스별 무료 한도가 있습니다. 전체 프로젝트의 무�
 
 공식 기준: [Firebase 요금제](https://firebase.google.com/docs/projects/billing/firebase-pricing-plans), [Firestore 무료 할당량](https://firebase.google.com/docs/firestore/quotas#free-quota).
 
+## UI 작업 안내
+
+2026-10-21부터 휴대폰 앱을 기준으로 화면을 설계합니다. 따뜻한 아이보리와 숲색, 넓은 기록 버튼, 하단 탐색, 읽기 쉬운 목록을 사용합니다. 다른 컴퓨터에서 이어서 작업할 때는 먼저 [AGENTS.md](AGENTS.md)의 디자인 결정과 동기화·검증 절차를 읽어 주세요.
+
 ## 실행
 
 Node.js 22.12 이상을 권장합니다.
