@@ -2,6 +2,10 @@
 
 기도와 할 일을 퀘스트로 기록하는 귀여운 캐릭터 게임형 모바일 웹 앱입니다. 아기 양 모험가 **소망이**, 파란 **미루기 슬라임**, 체력바, 공격 동작, 경험치, 레벨, 코인과 수집 아이템이 등장합니다.
 
+**[공개 체험 앱 열기](https://patrickdfg.github.io/pray/)** — GitHub Pages에 배포되어 있습니다. 현재는 기기별 체험 모드이며 실제 Google 로그인·팀 공유는 아래 Firebase 연결 후 가능합니다.
+
+`main` 브랜치에 코드를 올리면 GitHub Actions에서 빌드와 규칙 테스트를 통과한 뒤 Pages에 자동 배포됩니다. Pages 빌드만 `/pray/` 경로를 사용하며 Firebase Hosting 빌드는 루트 경로를 사용합니다. 공개 주소에서도 등록·기록·댓글·마무리·비밀 저장·모바일 화면·보상 구매를 브라우저로 검증했습니다.
+
 ## 무료 운영 구조
 
 **Firebase Spark(결제 계정 없이 시작하는 무료 요금제)**에 맞춰 구현했습니다. Cloud Functions, 유료 서버, Cloud Storage를 사용하지 않습니다.
@@ -127,6 +131,8 @@ npm run test:rules
 # 별도 터미널에서 개발 서버 실행 후:
 npm run test:browser
 ```
+
+공개 배포를 검사하려면 `APP_URL=https://patrickdfg.github.io/pray/` 환경변수를 지정하고 `npm run test:browser`를 실행합니다. PowerShell에서는 `$env:APP_URL='https://patrickdfg.github.io/pray/'`로 지정합니다.
 
 규칙 테스트에는 **Java 21 이상**이 필요합니다. Firebase CLI가 데모 프로젝트 `demo-pray-spark`의 로컬 Firestore 에뮬레이터를 실행하며 실제 프로젝트·결제 계정은 사용하지 않습니다.
 

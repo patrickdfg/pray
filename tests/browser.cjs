@@ -6,8 +6,16 @@ const assert = require("node:assert/strict");
     viewport: { width: 1440, height: 1080 },
   });
   const errors = [];
+  const missingAssets = [];
+  page.on("response", (r) => {
+    if (
+      r.url().startsWith(process.env.APP_URL || "http://localhost:5173") &&
+      r.status() >= 400
+    )
+      missingAssets.push({ url: r.url(), status: r.status() });
+  });
   page.on("pageerror", (e) => errors.push(e.message));
-  await page.goto("http://localhost:5173");
+  await page.goto(process.env.APP_URL || "http://localhost:5173");
   await page.waitForSelector(".hero img");
   await page.screenshot({ path: "test-results/desktop.png", fullPage: true });
   await page.getByRole("button", { name: "새 퀘스트 만들기" }).click();
@@ -126,6 +134,7 @@ const assert = require("node:assert/strict");
     );
   }
   assert.deepEqual(errors, []);
+  assert.deepEqual(missingAssets, []);
   console.log(
     "Browser checks passed: create, record, comment, complete, archive, secret isolation, reload, mobile layout, invite state, cosmetic purchase.",
   );
