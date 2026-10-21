@@ -1578,3 +1578,87 @@ footer {
     bottom: 12px;
   }
 }
+
+
+/* 2026-10-22 · Prayer Forest UI refinement. Visual only; game/data logic unchanged. */
+:root {
+  --ink: #263e34;
+  --muted: #65766b;
+  --forest: #285943;
+  --line: #e3e8dc;
+  --surface: #fffefa;
+  --canvas: #f7f8f2;
+}
+body { background: var(--canvas); -webkit-font-smoothing: antialiased; }
+.layout main { min-width: 0; }
+.content { max-width: 1250px; }
+.sidebar { background: #fcfdf8; }
+.brand { letter-spacing: -1.2px; }
+.brand-icon { background: #2e654a; border-radius: 15px; }
+.nav-item { transition: background .18s ease, color .18s ease; border-radius: 12px; }
+.nav-item:hover { background: #eef3e9; color: var(--forest); }
+.nav-item.active { background: #e5efdf; }
+header { background: #f7f8f2f2; }
+.primary { background: #286044; border-color: #286044; box-shadow: 0 5px 14px #28604418; transition: transform .15s ease, background .15s ease; }
+.primary:hover:not(:disabled) { background: #204c37; transform: translateY(-1px); }
+.secondary:hover:not(:disabled), .record:hover:not(:disabled) { border-color: #a5bea0; background: #e7f0df; }
+.hero.quest-hero { background: linear-gradient(125deg,#e6eedc 0%,#f0f3e6 54%,#e1ebd6 100%); border-color: #d5e2cc; box-shadow: 0 14px 35px #476b3f0c; }
+.quest-hero .pill { background: #fffdfaaf; }
+.quest-hero h2 { color: #284e36; }
+.quest-hero .bar i { background: linear-gradient(90deg,#7ba16f,#3b7655); }
+.metric { border-color: #e7ebe2; box-shadow: 0 5px 20px #39554007; }
+.metric strong { font-variant-numeric: tabular-nums; }
+.entry { border: 1px solid #e5e9df; box-shadow: 0 4px 16px #263e3508; transition: border-color .18s ease, transform .18s ease; }
+.entry:hover { border-color: #cadcca; }
+.entry-title strong { color: #253e32; }
+.record,.record.task { background: #e9f1e4; border-color: #d3e4cd; }
+.panel { box-shadow: 0 5px 24px #263e3508; }
+.filters button.selected { color: #275940; }
+.search:focus-within { border-color: #81a78b; box-shadow: 0 0 0 3px #81a78b22; }
+.modal { box-shadow: 0 24px 90px #172e2830; }
+.modal input:focus,.modal textarea:focus { outline: 2px solid #8aaa84; outline-offset: 1px; }
+.bottom-nav { box-shadow: 0 -6px 24px #263e3510; }
+.bottom-nav button.active { font-weight: 700; }
+button:disabled { cursor: not-allowed; }
+@media (max-width: 700px) {
+  html, body, #root { max-width: 100%; overflow-x: clip; }
+  header { box-shadow: 0 2px 14px #233e300a; }
+  .header-right { min-width: 0; }
+  .content { padding: 22px 17px calc(104px + env(safe-area-inset-bottom)); }
+  .page-heading { gap: 12px; }
+  .page-heading h1 { font-size: clamp(22px, 6vw, 27px); }
+  .page-heading .add { min-height: 52px; font-size: 15px; font-weight: 700; border-radius: 14px; }
+  .hero.quest-hero { min-height: 226px; border-radius: 22px; }
+  .quest-hero .hero-copy { padding: 22px 20px; }
+  .quest-hero h2 { font-size: clamp(22px,6.1vw,27px); }
+  .metrics { gap: 9px; }
+  .metric { min-width: 0; border-radius: 16px; padding: 13px 9px; }
+  .metric > div > span { font-size: 11px; }
+  .metric strong { font-size: clamp(21px,6vw,26px); }
+  .section-title h2 { letter-spacing: -.55px; }
+  .entry { border-radius: 17px; padding: 16px 14px; }
+  .entry-title { min-width: 0; }
+  .entry-title strong { font-size: 15px; overflow-wrap: anywhere; }
+  .entry-meta,.entry-foot { font-size: 11px; }
+  .record,.record.task { font-size: 13px; min-height: 46px; border-radius: 11px; }
+  .filters { border-radius: 12px; }
+  .filters button { min-width: 0; font-size: 11px; }
+  .bottom-nav { padding: 7px 6px max(10px, env(safe-area-inset-bottom)); }
+  .bottom-nav button { min-width: 0; min-height: 53px; }
+  .bottom-nav small { font-size: 10px; white-space: nowrap; }
+  .modal { width: 100%; }
+}
+@media (max-width: 360px) {
+  .content { padding-left: 12px; padding-right: 12px; }
+  .header-right { gap: 5px; }
+  .coin { padding: 7px; }
+  .google-login { padding: 7px; }
+  .hero.quest-hero { min-height: 222px; }
+  .quest-hero h2 { max-width: 72%; }
+  .entry { padding: 14px 11px; gap: 0 8px; }
+  .entry-title strong { font-size: 14px; }
+  .filters button { font-size: 10px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .primary,.nav-item,.entry { transition: none; }
+}
