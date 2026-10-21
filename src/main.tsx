@@ -14,6 +14,9 @@ import {
   Send,
   Sparkles,
   Copy,
+  Coins,
+  Swords,
+  Trophy,
   LogOut,
   Flower2,
   BookOpen,
@@ -33,6 +36,8 @@ import {
   stats,
   logEntry,
   finishEntry,
+  checkActivityLimit,
+  rewardProfile,
 } from "./domain";
 import {
   connected,
@@ -44,6 +49,7 @@ import {
   watchList,
 } from "./cloud";
 import "./style.css";
+import "./quest.css";
 const uid = () => crypto.randomUUID();
 const escError = (e: unknown) =>
   e instanceof Error ? e.message : "저장하지 못했어요. 다시 시도해 주세요.";
@@ -64,6 +70,7 @@ function App() {
     xp: connected ? 0 : 120,
     coins: connected ? 0 : 40,
   });
+  const [battle, setBattle] = useState(0);
   const [signed, setSigned] = useState(false),
     [loaded, setLoaded] = useState(!connected);
   const [team, setTeam] = useState(""),
@@ -213,7 +220,7 @@ function App() {
     setSecrets(next);
   }
   function reward(xp: number, coins: number) {
-    const p = { ...profile, xp: profile.xp + xp, coins: profile.coins + coins };
+    const p = rewardProfile(profile, xp, coins);
     save("pray:demo:profile", p);
     setProfile(p);
   }
@@ -224,7 +231,7 @@ function App() {
       if (connected) await command("purchase", { decoration: id });
       else {
         if (profile.coins < decoration.cost)
-          throw Error("잎사귀가 조금 더 필요해요.");
+          throw Error("코인가 조금 더 필요해요.");
         const next = {
           ...profile,
           coins: profile.coins - decoration.cost,
@@ -233,7 +240,7 @@ function App() {
         save("pray:demo:profile", next);
         setProfile(next);
       }
-      notify("정원에 새로운 선물이 도착했어요!");
+      notify("새 아이템 획득! 컬렉션이 늘었어요!");
     });
   }
   const all = [...items, ...secrets],
@@ -286,6 +293,8 @@ function App() {
   async function add() {
     await run(async () => {
       if (!draft.title.trim()) throw Error("제목을 적어 주세요.");
+      if (!draft.secret && !connected && items.length >= 100)
+        throw Error("팀당 공유 퀘스트는 100개까지 보관해요.");
       const entry: Entry = {
         id: uid(),
         ...draft,
@@ -306,11 +315,12 @@ function App() {
       } else storeItems([...items, entry]);
       setModal(null);
       setDraft({ title: "", body: "", kind: "prayer", secret: false });
-      notify("새로운 씨앗을 심었어요 🌱");
+      notify("새 퀘스트 등록 완료! 🎮");
     });
   }
   async function record(e: Entry) {
     await run(async () => {
+      if (!e.secret && !connected) checkActivityLimit(profile);
       if (e.secret)
         storeSecrets(secrets.map((x) => (x.id === e.id ? logEntry(x) : x)));
       else if (connected)
@@ -319,15 +329,17 @@ function App() {
         storeItems(items.map((x) => (x.id === e.id ? logEntry(x) : x)));
         reward(10, 2);
       }
+      if (!e.secret) setBattle((v) => v + 1);
       notify(
         e.secret
           ? "비밀 기록을 이 기기에 저장했어요 🔒"
-          : "마음을 보탰어요! +10 성장 · +2 잎사귀 🌿",
+          : "퀘스트 기록! +10 XP · +2 G ⚡",
       );
     });
   }
   async function finish(e: Entry) {
     await run(async () => {
+      if (!e.secret && !connected) checkActivityLimit(profile);
       if (e.secret)
         storeSecrets(
           secrets.map((x) => (x.id === e.id ? finishEntry(x, rating) : x)),
@@ -346,6 +358,8 @@ function App() {
   async function addComment() {
     await run(async () => {
       if (!current || !comment.trim()) return;
+      if (!current.secret && current.comments.length >= 100)
+        throw Error("한 퀘스트에 댓글 100개까지 남길 수 있어요.");
       const c = {
         id: uid(),
         name: profile.name,
@@ -367,7 +381,7 @@ function App() {
           ),
         );
       setComment("");
-      notify("따뜻한 마음을 남겼어요.");
+      notify("응원 메시지 전송 완료!");
     });
   }
   async function createTeam() {
@@ -426,10 +440,10 @@ function App() {
           }}
         >
           <span className="brand-icon">
-            <Leaf size={24} />
+            <Swords size={24} />
           </span>
           <span>
-            기도숲<small>PRAY, GROW TOGETHER</small>
+            기도숲<small>PRAY QUEST · LEVEL UP</small>
           </span>
         </a>
         <div className="team-switch">
@@ -442,7 +456,7 @@ function App() {
           </div>
           <ChevronRight size={16} />
         </div>
-        <p className="nav-label">나의 작은 여정</p>
+        <p className="nav-label">나의 모험</p>
         <nav>
           {nav.map(([key, label, Icon]) => (
             <button
@@ -466,11 +480,11 @@ function App() {
           <div className="little-note">
             <span>🌱</span>
             <strong>
-              작은 마음이 모이면
+              기도 한 번에
               <br />
-              커다란 숲이 되어요.
+              경험치가 쑥쑥!
             </strong>
-            <p>오늘도 당신의 속도로 자라요.</p>
+            <p>한 번의 실천도 경험치로!</p>
           </div>
           <button className="settings" onClick={() => setModal("setup")}>
             <Settings size={18} />
@@ -522,7 +536,7 @@ function App() {
             <Menu />
           </button>
           <div className="breadcrumb">
-            나의 작은 여정 <ChevronRight size={14} />{" "}
+            나의 모험 <ChevronRight size={14} />{" "}
             <b>{nav.find((n) => n[0] === tab)?.[1]}</b>
           </div>
           <div className="header-right">
@@ -534,8 +548,8 @@ function App() {
                 : "체험 모드"}
             </span>
             <button className="coin" onClick={() => setTab("stats")}>
-              <Leaf size={15} />
-              {profile.coins} 잎
+              <Coins size={15} />
+              {profile.coins} G
             </button>
             <button className="header-avatar" onClick={() => setModal("setup")}>
               🐑
@@ -595,12 +609,13 @@ function App() {
           <div className="page-heading">
             <div>
               <p className="eyebrow">
-                {today} <span>· 마음을 가꾸기 좋은 날</span>
+                {today} <span>· 오늘도 경험치 획득!</span>
               </p>
               <h1>
                 {tab === "home" ? (
                   <>
-                    반가워요, {profile.name}님 <span className="wave">☀️</span>
+                    {profile.name} 대원, 퀘스트 출발!{" "}
+                    <span className="wave">⚔️</span>
                   </>
                 ) : (
                   nav.find((n) => n[0] === tab)?.[1]
@@ -608,12 +623,12 @@ function App() {
               </h1>
               <p>
                 {tab === "home"
-                  ? "오늘의 작은 기도와 실천이, 내일의 우리를 자라게 해요."
+                  ? "기도하고, 할 일 깨고, 내 캐릭터를 키워 보세요!"
                   : tab === "stats"
-                    ? "비교보다 성장에 집중해요. 당신이 남긴 마음의 발자국이에요."
+                    ? "레벨은 얼마나 올랐을까? 내 기록과 수집품을 확인해요."
                     : tab === "team"
-                      ? "함께 기도하고, 서로의 하루를 다정하게 응원해요."
-                      : "마음에 담긴 이야기를 하나씩 살펴보세요."}
+                      ? "파티원을 초대하고, 함께 퀘스트를 클리어해요!"
+                      : "진행 중인 퀘스트와 기록을 확인해요."}
               </p>
             </div>
             <button
@@ -626,40 +641,89 @@ function App() {
                 setModal("new");
               }}
             >
-              <Plus size={18} />
-              새로운 씨앗 심기
+              <Plus size={18} />새 퀘스트 만들기
             </button>
           </div>
           {tab === "home" && (
             <>
-              <div className="hero">
-                <img
-                  src="/garden.webp"
-                  alt="목도리를 두른 아기 양과 작은 새가 쉬고 있는 포근한 기도 정원"
-                />
+              <div className="hero quest-hero">
                 <div className="hero-copy">
                   <span className="pill">
-                    <Sparkles size={13} />
-                    함께 자라는 기도 정원
+                    <Swords size={14} />
+                    DAILY PRAY QUEST
                   </span>
                   <h2>
-                    조금씩, 꾸준히.
+                    기도하고, 실천하고.
                     <br />
-                    우리의 마음이 자라요.
+                    소망이와 레벨 업!
                   </h2>
                   <p>
-                    기도 한 번, 실천 한 번에
+                    기도 한 번에 +10 XP!
                     <br />
-                    나의 작은 숲이 더욱 푸르러져요.
+                    오늘의 미루기 슬라임을 물리쳐요.
                   </p>
                   <div className="level">
                     <span>
-                      Lv.{level} <b>마음의 정원사</b>
+                      Lv.{level} <b>소망의 모험가</b>
                     </span>
                     <span>{progress} / 100 XP</span>
                   </div>
                   <div className="bar">
-                    <i style={{ width: `${progress}%` }} />
+                    <i style={{ width: progress + "%" }} />
+                  </div>
+                  <div className="quest-reward">
+                    <Trophy size={14} />
+                    성실한 한 걸음이 나의 경험치!
+                  </div>
+                </div>
+                <div
+                  className={"battle-scene " + (battle ? "has-battled" : "")}
+                  key={battle}
+                  aria-label="소망이와 슬라임의 퀘스트 장면"
+                >
+                  <div className="stage-tag">
+                    ⚑ STAGE {String(level).padStart(2, "0")}{" "}
+                    <span>꾸준함의 초원</span>
+                  </div>
+                  <div className="cloud c1" />
+                  <div className="cloud c2" />
+                  <div className="hill h1" />
+                  <div className="hill h2" />
+                  <div className="game-tree t1">♠</div>
+                  <div className="game-tree t2">♠</div>
+                  <div className="game-ground" />
+                  <div className="fighter hero-fighter">
+                    <div className="fighter-label">
+                      <b>소망이</b>
+                      <span>Lv.{level}</span>
+                    </div>
+                    <div className="hp-bar">
+                      <i />
+                    </div>
+                    <img
+                      src="/sheep-hero.webp"
+                      alt="별 지팡이와 하트 방패를 든 아기 양 모험가 소망이"
+                    />
+                  </div>
+                  <div className="fighter enemy-fighter">
+                    <div className="fighter-label">
+                      <b>미루기 슬라임</b>
+                    </div>
+                    <div className="hp-bar enemy-hp">
+                      <i style={{ width: Math.max(0, 100 - progress) + "%" }} />
+                    </div>
+                    <img src="/slime.webp" alt="통통한 파란색 미루기 슬라임" />
+                  </div>
+                  {battle > 0 && (
+                    <>
+                      <span className="attack-star">✦</span>
+                      <span className="damage-pop">+10 XP!</span>
+                    </>
+                  )}
+                  <div className="battle-tip">
+                    {battle
+                      ? "NICE! 경험치를 획득했어요 ✨"
+                      : "아래 퀘스트를 누르면 모험이 시작돼요!"}
                   </div>
                 </div>
                 <div className="garden-decorations">
@@ -671,9 +735,6 @@ function App() {
                       </span>
                     ))}
                 </div>
-                <span className="hero-caption">
-                  오늘도 함께해 줘서 고마워요 ♡
-                </span>
               </div>
               <div className="metrics">
                 <Metric
@@ -685,7 +746,7 @@ function App() {
                 />
                 <Metric
                   icon={<Check />}
-                  label="오늘 살핀 씨앗"
+                  label="오늘의 퀘스트 기록"
                   value={`${todayCount}개`}
                   note="작은 실천도 충분히 소중해요"
                   color="green"
@@ -708,12 +769,12 @@ function App() {
                     <div>
                       <h2>
                         {tab === "archive"
-                          ? "감사로 남긴 씨앗"
+                          ? "클리어한 퀘스트"
                           : tab === "task"
                             ? "오늘의 작은 실천"
                             : tab === "prayer"
                               ? "마음을 모으는 기도"
-                              : "오늘 돌볼 씨앗"}{" "}
+                              : "오늘의 퀘스트"}{" "}
                         <span>{shown.length}</span>
                       </h2>
                       <p>제목을 누르면 이야기와 감동을 나눌 수 있어요.</p>
@@ -732,7 +793,7 @@ function App() {
                     {[
                       ["all", "전체"],
                       ["team", "함께 나눔"],
-                      ["mine", "내가 심은 씨앗"],
+                      ["mine", "내 퀘스트"],
                       ["secret", "나만의 비밀"],
                     ].map(([key, label]) => (
                       <button
@@ -813,18 +874,18 @@ function App() {
                         <h3>
                           {tab === "archive"
                             ? "아직 감사 기록이 없어요"
-                            : "새로운 씨앗을 기다리고 있어요"}
+                            : "아직 등록된 퀘스트가 없어요"}
                         </h3>
                         <p>
                           {tab === "archive"
                             ? "항목을 열고 여정을 마무리하면 여기에 모여요."
-                            : "작은 기도 하나부터 심어 볼까요?"}
+                            : "첫 번째 퀘스트를 등록해 볼까요?"}
                         </p>
                         <button
                           className="secondary"
                           onClick={() => setModal("new")}
                         >
-                          씨앗 심기
+                          퀘스트 등록
                         </button>
                       </div>
                     )}
@@ -845,7 +906,7 @@ function App() {
                       icon={<Sparkles />}
                       label="나의 성장"
                       value={`Lv.${level}`}
-                      note={`${profile.xp} XP · ${profile.coins} 잎사귀`}
+                      note={`${profile.xp} XP · ${profile.coins} 코인`}
                       color="green"
                     />
                     <Metric
@@ -913,15 +974,15 @@ function App() {
                   <div className="panel">
                     <h2>꾸준함에 주는 선물</h2>
                     <p>
-                      함께 나눈 기도·실천 기록마다 10 XP와 2 잎사귀, 마무리하면
-                      단계에 관계없이 20 XP와 5 잎사귀를 받아요. 100 XP마다
-                      레벨이 올라요. 비밀 기록은 기기 안에만 남기며 계정 보상에
+                      함께 나눈 기도·실천 기록마다 10 XP와 2 코인, 마무리하면
+                      단계에 관계없이 20 XP와 5 코인을 받아요. 100 XP마다 레벨이
+                      올라요. 비밀 기록은 기기 안에만 남기며 계정 보상에
                       포함하지 않아요.
                     </p>
                   </div>
                   <div className="panel">
-                    <h2>소망이의 정원 꾸미기</h2>
-                    <p>차곡차곡 모은 잎사귀로 작은 선물을 들여놓아요.</p>
+                    <h2>소망이의 모험 보상 상점</h2>
+                    <p>차곡차곡 모은 코인으로 새 아이템을 모아 보세요!</p>
                     <div className="decoration-shop">
                       {decorations.map((d) => (
                         <button
@@ -937,8 +998,8 @@ function App() {
                           <strong>{d.name}</strong>
                           <small>
                             {profile.decorations?.includes(d.id)
-                              ? "정원에 놓았어요"
-                              : `${d.cost} 잎사귀`}
+                              ? "획득 완료"
+                              : `${d.cost} 코인`}
                           </small>
                         </button>
                       ))}
@@ -999,23 +1060,26 @@ function App() {
             </section>
             <aside className="right-rail">
               <div className="companion panel">
-                <span className="eyebrow">MY LITTLE COMPANION</span>
-                <h3>나의 동행, 소망이</h3>
+                <span className="eyebrow">MY CHARACTER</span>
+                <h3>나의 캐릭터 · 소망이</h3>
                 <div className="pet-picture">
-                  <img src="/garden.webp" alt="귀여운 아기 양 소망이" />
+                  <img
+                    src="/sheep-hero.webp"
+                    alt="하트 방패를 든 모험가 소망이"
+                  />
                 </div>
                 <span className="pet-level">
                   Lv.{level} ·{" "}
                   {level < 5
-                    ? "작은 새싹"
+                    ? "초보 모험가"
                     : level < 10
-                      ? "푸른 잎사귀"
-                      : "꽃 피는 정원"}
+                      ? "숙련 모험가"
+                      : "소망의 기사"}
                 </span>
                 <p>
-                  “작은 한 걸음이면 충분해요.
+                  “오늘의 퀘스트도
                   <br />
-                  오늘도 내가 함께할게요!”
+                  함께 클리어하자!”
                 </p>
                 <div className="pet-progress">
                   <span>다음 성장까지</span>
@@ -1027,7 +1091,7 @@ function App() {
               </div>
               <div className="team-card panel">
                 <div className="section-title">
-                  <h3>함께하는 우리</h3>
+                  <h3>우리 파티</h3>
                   <button aria-label="팀 보기" onClick={() => setTab("team")}>
                     <ChevronRight size={17} />
                   </button>
@@ -1040,7 +1104,7 @@ function App() {
                   ))}
                   <small>{myMembers.length}명이 함께해요</small>
                 </div>
-                <p>서로의 기도가 되어 주세요.</p>
+                <p>함께하면 더 신나는 모험!</p>
                 <button className="secondary" onClick={makeInvite}>
                   <Users size={15} />
                   함께할 친구 초대하기
@@ -1110,7 +1174,7 @@ function App() {
             {modal === "new" && (
               <>
                 <span className="modal-emoji">🌱</span>
-                <h2>새로운 씨앗 심기</h2>
+                <h2>새 퀘스트 만들기</h2>
                 <p>지금 마음에 담고 있는 이야기를 적어 주세요.</p>
                 <div className="segmented">
                   <button
@@ -1131,7 +1195,7 @@ function App() {
                   <input
                     autoFocus
                     maxLength={100}
-                    placeholder="어떤 씨앗을 심어 볼까요?"
+                    placeholder="어떤 퀘스트에 도전할까요?"
                     value={draft.title}
                     onChange={(e) =>
                       setDraft({ ...draft, title: e.target.value })
@@ -1175,7 +1239,7 @@ function App() {
                   </p>
                 )}
                 <button className="primary full" disabled={busy} onClick={add}>
-                  {busy ? "심는 중…" : "씨앗 심기"}
+                  {busy ? "등록 중…" : "퀘스트 등록"}
                 </button>
               </>
             )}
@@ -1190,8 +1254,8 @@ function App() {
                 </p>
                 {!connected ? (
                   <div className="hint">
-                    지금은 체험 모드예요. 실제 초대 링크는 Firebase 로그인·서버
-                    연결 후 만들 수 있어요.
+                    지금은 체험 모드예요. 실제 초대 링크는 Firebase 무료
+                    프로젝트 연결 후 만들 수 있어요.
                   </div>
                 ) : (
                   <>
@@ -1282,6 +1346,18 @@ function App() {
                     비밀 기록 백업하기
                   </button>
                 </div>
+                <div className="panel free-plan">
+                  <h3>무료 플레이 한도</h3>
+                  <p>
+                    팀원 최대 100명 · 공유 퀘스트 100개 · 항목당 댓글 100개 ·
+                    계정별 하루 보상 기록 200회(한국 자정 초기화).
+                  </p>
+                  <small>
+                    실제 공유는 Firebase Spark 프로젝트 연결 후 사용할 수
+                    있어요. 무료 서비스 전체 한도에 도달하면 일부 기능이 일시
+                    중단될 수 있어요.
+                  </small>
+                </div>
                 <p className="hint">
                   체험 데이터는 이 브라우저에 저장되며 다른 사람과 공유되지
                   않습니다. 실제 연결 방법은 저장소 README에 있어요.
@@ -1313,7 +1389,7 @@ function App() {
                 <span className="eyebrow">
                   {current.secret
                     ? "나만의 비밀"
-                    : `${current.authorName}님이 심은 씨앗`}
+                    : `${current.authorName}님의 퀘스트`}
                 </span>
                 <h2>{current.title}</h2>
                 <div className="detail-body">
@@ -1392,7 +1468,7 @@ function App() {
                   ))}
                   {!current.comments.length && (
                     <p className="hint">
-                      작은 감동이나 따뜻한 응원을 남겨 주세요.
+                      작은 감동이나 신나는 응원을 남겨 주세요.
                     </p>
                   )}
                   <div className="comment-input">

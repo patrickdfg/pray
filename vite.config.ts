@@ -7,7 +7,7 @@ export default defineConfig({
       output: {
         manualChunks: {
           "firebase-core": ["firebase/app", "firebase/auth"],
-          "firebase-data": ["firebase/firestore", "firebase/functions"],
+          "firebase-data": ["firebase/firestore"],
         },
       },
     },

@@ -12,7 +12,8 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
-      - run: npm ci
-        working-directory: functions
-      - run: npm run build
-        working-directory: functions
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: npm run test:rules

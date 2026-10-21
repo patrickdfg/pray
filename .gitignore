@@ -6,3 +6,6 @@ functions/lib/
 *.tsbuildinfo
 firebase-debug.log
 test-results/
+.tools/
+firestore-debug.log
+ui-debug.log

@@ -5,8 +5,27 @@ import {
   finishEntry,
   stats,
   percent,
+  activityDay,
+  rewardProfile,
 } from "../src/domain";
 describe("prayer and task records", () => {
+  it("enforces 200 rewards and resets at Korean midnight", () => {
+    const now = Date.parse("2026-10-21T14:59:59Z");
+    const p = {
+      uid: "demo",
+      name: "모험가",
+      xp: 10,
+      coins: 2,
+      dailyDay: activityDay(now),
+      dailyCount: 199,
+    };
+    const last = rewardProfile(p, 10, 2, now);
+    expect(last.dailyCount).toBe(200);
+    expect(() => rewardProfile(last, 10, 2, now)).toThrow();
+    const tomorrow = rewardProfile(last, 10, 2, now + 1000);
+    expect(tomorrow.dailyCount).toBe(1);
+    expect(tomorrow.dailyDay).toBe(last.dailyDay! + 1);
+  });
   it("records an activity without mutating the original", () => {
     const original = demoItems[1],
       next = logEntry(original, 10000);

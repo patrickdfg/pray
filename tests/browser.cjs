@@ -10,15 +10,20 @@ const assert = require("node:assert/strict");
   await page.goto("http://localhost:5173");
   await page.waitForSelector(".hero img");
   await page.screenshot({ path: "test-results/desktop.png", fullPage: true });
-  await page.getByRole("button", { name: "새로운 씨앗 심기" }).click();
-  await page.getByPlaceholder("어떤 씨앗을 심어 볼까요?").fill("테스트 기도");
+  await page.getByRole("button", { name: "새 퀘스트 만들기" }).click();
+  await page.getByPlaceholder("어떤 퀘스트에 도전할까요?").fill("테스트 기도");
   await page
     .getByPlaceholder("자세한 내용, 함께 나누고 싶은 마음…")
     .fill("감사와 소망의 상세 이야기");
-  await page.getByRole("button", { name: "씨앗 심기", exact: true }).click();
+  await page.getByRole("button", { name: "퀘스트 등록", exact: true }).click();
   await page
     .getByRole("button", { name: "테스트 기도 기도 기록", exact: true })
     .click();
+  assert.equal(await page.locator(".battle-scene.has-battled").count(), 1);
+  assert.equal(
+    await page.locator(".hero-copy .bar i").evaluate((el) => el.style.width),
+    "30%",
+  );
   await page.locator(".entry-title").filter({ hasText: "테스트 기도" }).click();
   await page
     .getByPlaceholder("오늘 마음에 남은 감동은…")
@@ -39,12 +44,12 @@ const assert = require("node:assert/strict");
     await page.locator(".entry").filter({ hasText: "테스트 기도" }).innerText(),
     /100%/,
   );
-  await page.getByRole("button", { name: "새로운 씨앗 심기" }).click();
+  await page.getByRole("button", { name: "새 퀘스트 만들기" }).click();
   await page
-    .getByPlaceholder("어떤 씨앗을 심어 볼까요?")
+    .getByPlaceholder("어떤 퀘스트에 도전할까요?")
     .fill("나만의 비밀 테스트");
   await page.getByRole("checkbox").check();
-  await page.getByRole("button", { name: "씨앗 심기", exact: true }).click();
+  await page.getByRole("button", { name: "퀘스트 등록", exact: true }).click();
   await page
     .locator(".sidebar")
     .getByRole("button", { name: "오늘의 숲" })
@@ -93,7 +98,7 @@ const assert = require("node:assert/strict");
   const beforeCoins = await page.evaluate(
     () => JSON.parse(localStorage.getItem("pray:demo:profile")).coins,
   );
-  await page.getByRole("button", { name: "🌷 작은 꽃밭 20 잎사귀" }).click();
+  await page.getByRole("button", { name: "🌷 작은 꽃밭 20 코인" }).click();
   const saved = await page.evaluate(() =>
     JSON.parse(localStorage.getItem("pray:demo:profile")),
   );
@@ -101,7 +106,7 @@ const assert = require("node:assert/strict");
   assert.deepEqual(saved.decorations, ["flower"]);
   assert.equal(
     await page
-      .getByRole("button", { name: "🌷 작은 꽃밭 정원에 놓았어요" })
+      .getByRole("button", { name: "🌷 작은 꽃밭 획득 완료" })
       .isDisabled(),
     true,
   );
@@ -110,6 +115,16 @@ const assert = require("node:assert/strict");
     .getByRole("button", { name: "오늘의 숲", exact: true })
     .click();
   assert.equal(await page.locator(".garden-decorations").innerText(), "🌷");
+  for (const width of [320, 390, 768, 1024, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    assert.equal(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth > innerWidth,
+      ),
+      false,
+      `horizontal overflow at ${width}px`,
+    );
+  }
   assert.deepEqual(errors, []);
   console.log(
     "Browser checks passed: create, record, comment, complete, archive, secret isolation, reload, mobile layout, invite state, cosmetic purchase.",

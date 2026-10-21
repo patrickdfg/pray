@@ -6,8 +6,15 @@ import {
   signOut,
   onAuthStateChanged,
 } from "firebase/auth";
-import { getFirestore, collection, doc, onSnapshot } from "firebase/firestore";
-import { getFunctions, httpsCallable } from "firebase/functions";
+import {
+  getFirestore,
+  collection,
+  doc,
+  onSnapshot,
+  query,
+  limit,
+} from "firebase/firestore";
+import { createSparkCommand, normalize } from "./spark";
 const env = import.meta.env;
 export const connected = !!(
   env.VITE_FIREBASE_API_KEY &&
@@ -40,9 +47,13 @@ export async function command(
   action: string,
   payload: Record<string, unknown> = {},
 ) {
-  if (!app) throw Error("서버 연결이 필요해요.");
-  const call = httpsCallable(getFunctions(app, "asia-northeast3"), "garden");
-  return (await call({ action, ...payload })).data as any;
+  if (!db || !auth?.currentUser)
+    throw Error("Google 로그인과 Firebase 연결이 필요해요.");
+  return createSparkCommand(
+    db,
+    auth.currentUser.uid,
+    auth.currentUser.displayName || "모험가",
+  )(action, payload);
 }
 export function watchDoc(
   path: string,
@@ -50,7 +61,11 @@ export function watchDoc(
   error: (e: Error) => void,
 ) {
   return db
-    ? onSnapshot(doc(db, path), (s) => fn(s.exists() ? s.data() : null), error)
+    ? onSnapshot(
+        doc(db, path),
+        (s) => fn(s.exists() ? normalize(s.data()) : null),
+        error,
+      )
     : () => {};
 }
 export function watchList(
@@ -60,8 +75,8 @@ export function watchList(
 ) {
   return db
     ? onSnapshot(
-        collection(db, path),
-        (s) => fn(s.docs.map((d) => ({ ...d.data(), id: d.id }))),
+        query(collection(db, path), limit(100)),
+        (s) => fn(s.docs.map((d) => ({ ...normalize(d.data()), id: d.id }))),
         error,
       )
     : () => {};

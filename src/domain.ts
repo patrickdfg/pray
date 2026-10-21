@@ -29,7 +29,31 @@ export type Profile = {
   xp: number;
   coins: number;
   decorations?: string[];
+  dailyDay?: number;
+  dailyCount?: number;
 };
+export const activityDay = (now = Date.now()) =>
+  Math.floor((now + 9 * 3600000) / 86400000);
+export function checkActivityLimit(profile: Profile, now = Date.now()) {
+  if (profile.dailyDay === activityDay(now) && (profile.dailyCount || 0) >= 200)
+    throw Error("오늘의 기록 한도 200회에 도달했어요. 내일 다시 만나요!");
+}
+export function rewardProfile(
+  profile: Profile,
+  xp: number,
+  coins: number,
+  now = Date.now(),
+): Profile {
+  checkActivityLimit(profile, now);
+  const day = activityDay(now);
+  return {
+    ...profile,
+    xp: profile.xp + xp,
+    coins: profile.coins + coins,
+    dailyDay: day,
+    dailyCount: profile.dailyDay === day ? (profile.dailyCount || 0) + 1 : 1,
+  };
+}
 export const decorations = [
   { id: "flower", name: "작은 꽃밭", icon: "🌷", cost: 20 },
   { id: "lantern", name: "별빛 랜턴", icon: "🏮", cost: 50 },

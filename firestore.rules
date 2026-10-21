@@ -1,17 +1,156 @@
 rules_version = '2';
 service cloud.firestore {
  match /databases/{database}/documents {
-  function signed() { return request.auth != null; }
-  function member(team) { return signed() && exists(/databases/$(database)/documents/teams/$(team)/members/$(request.auth.uid)); }
-  match /profiles/{uid} { allow read: if signed() && request.auth.uid == uid; allow write: if false; }
+  function signed() { return request.auth != null && request.auth.token.firebase.sign_in_provider == 'google.com'; }
+  function me() { return request.auth.uid; }
+  function profile() { return get(/databases/$(database)/documents/profiles/$(me())).data; }
+  function member(team) { return signed() && exists(/databases/$(database)/documents/teams/$(team)/members/$(me())); }
+  function validKey(v) { return v is string && v.matches('^[A-Za-z0-9_-]{1,100}$'); }
+  function freshEvent(team,item,event,kind) {
+   let path = /databases/$(database)/documents/teams/$(team)/items/$(item)/events/$(event);
+   return validKey(event) && !exists(path) && getAfter(path).data.uid == me() && getAfter(path).data.kind == kind && getAfter(path).data.at == request.time;
+  }
+  function rewardUpdate() {
+   let p = request.resource.data;
+   let r = p.lastEvent;
+   let e = getAfter(/databases/$(database)/documents/teams/$(r.team)/items/$(r.item)/events/$(r.event)).data;
+   let day = int((request.time.toMillis() + 32400000) / 86400000);
+   return p.diff(resource.data).affectedKeys().hasOnly(['xp','coins','lastEvent','dailyDay','dailyCount'])
+    && r is map && r.keys().hasOnly(['team','item','event']) && validKey(r.team) && validKey(r.item) && validKey(r.event)
+    && freshEvent(r.team,r.item,r.event,e.kind) && e.kind in ['log','complete']
+    && p.xp == resource.data.xp + (e.kind == 'log' ? 10 : 20)
+    && p.coins == resource.data.coins + (e.kind == 'log' ? 2 : 5)
+    && p.dailyDay == day && p.dailyCount == (resource.data.dailyDay == day ? resource.data.dailyCount + 1 : 1) && p.dailyCount <= 200;
+  }
+  function purchaseUpdate() {
+   let next = request.resource.data;
+   let owned = resource.data.decorations;
+   let added = next.decorations[owned.size()];
+   let prices = {'flower':20,'lantern':50,'fountain':100};
+   return next.diff(resource.data).affectedKeys().hasOnly(['coins','decorations'])
+    && next.decorations.size() == owned.size() + 1 && next.decorations == owned.concat([added])
+    && added in ['flower','lantern','fountain'] && !(added in owned)
+    && next.coins == resource.data.coins - prices[added] && next.coins >= 0;
+  }
+  match /profiles/{uid} {
+   allow get: if signed() && uid == me();
+   allow create: if signed() && uid == me()
+    && request.resource.data.keys().hasOnly(['uid','name','xp','coins','decorations','activeTeam','createdAt','dailyDay','dailyCount','lastEvent'])
+    && request.resource.data.uid == uid && request.resource.data.name is string && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 80
+    && request.resource.data.xp == 0 && request.resource.data.coins == 0 && request.resource.data.decorations == [] && request.resource.data.activeTeam == ''
+    && request.resource.data.createdAt == request.time && request.resource.data.dailyDay == 0 && request.resource.data.dailyCount == 0 && request.resource.data.lastEvent == null;
+   allow update: if signed() && uid == me() && (
+    (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['activeTeam']) && resource.data.activeTeam == '' && validKey(request.resource.data.activeTeam)
+     && getAfter(/databases/$(database)/documents/teams/$(request.resource.data.activeTeam)/members/$(uid)).data.uid == uid
+     && !exists(/databases/$(database)/documents/teams/$(request.resource.data.activeTeam)/members/$(uid)))
+    || rewardUpdate() || purchaseUpdate());
+  }
   match /teams/{team} {
-   allow read: if member(team); allow write: if false;
-   match /members/{uid} { allow read: if member(team); allow write: if false; }
+   allow get: if member(team);
+   allow create: if signed() && validKey(team)
+    && request.resource.data.keys().hasOnly(['name','leader','createdAt','memberCount','itemCount','lastMember','lastItem'])
+    && request.resource.data.name is string && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 40
+    && request.resource.data.leader == me() && request.resource.data.createdAt == request.time
+    && request.resource.data.memberCount == 1 && request.resource.data.itemCount == 0 && request.resource.data.lastMember == me() && request.resource.data.lastItem == ''
+    && profile().activeTeam == '' && getAfter(/databases/$(database)/documents/profiles/$(me())).data.activeTeam == team
+    && getAfter(/databases/$(database)/documents/teams/$(team)/members/$(me())).data.role == 'leader';
+   allow update: if signed() && (
+    (member(team) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['itemCount','lastItem'])
+     && request.resource.data.itemCount == resource.data.itemCount + 1 && request.resource.data.itemCount <= 100
+     && validKey(request.resource.data.lastItem)
+     && !exists(/databases/$(database)/documents/teams/$(team)/items/$(request.resource.data.lastItem))
+     && getAfter(/databases/$(database)/documents/teams/$(team)/items/$(request.resource.data.lastItem)).data.author == me()
+     && getAfter(/databases/$(database)/documents/teams/$(team)/items/$(request.resource.data.lastItem)).data.createdAt == request.time)
+    || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberCount','lastMember'])
+     && request.resource.data.memberCount == resource.data.memberCount + 1 && request.resource.data.memberCount <= 100 && request.resource.data.lastMember == me()
+     && !exists(/databases/$(database)/documents/teams/$(team)/members/$(me()))
+     && getAfter(/databases/$(database)/documents/teams/$(team)/members/$(me())).data.joinedAt == request.time));
+   match /members/{uid} {
+    allow get: if signed() && (uid == me() || member(team));
+    allow list: if member(team) && request.query.limit <= 100;
+    allow create: if signed() && uid == me() && profile().activeTeam == ''
+     && request.resource.data.keys().hasOnly(['uid','name','parentUid','role','inviteToken','joinedAt'])
+     && request.resource.data.uid == uid && request.resource.data.name == profile().name && request.resource.data.joinedAt == request.time
+     && getAfter(/databases/$(database)/documents/profiles/$(uid)).data.activeTeam == team
+     && ((request.resource.data.role == 'leader' && request.resource.data.parentUid == '' && request.resource.data.inviteToken == ''
+       && !exists(/databases/$(database)/documents/teams/$(team)) && getAfter(/databases/$(database)/documents/teams/$(team)).data.leader == uid)
+      || (request.resource.data.role == 'member' && validKey(request.resource.data.inviteToken) && validInvite(team,request.resource.data.inviteToken,request.resource.data.parentUid)
+       && getAfter(/databases/$(database)/documents/teams/$(team)).data.memberCount == get(/databases/$(database)/documents/teams/$(team)).data.memberCount + 1));
+   }
    match /items/{item} {
-    allow read: if member(team); allow write: if false;
-    match /{nested=**} { allow read, write: if false; }
+    allow get: if member(team);
+    allow list: if member(team) && request.query.limit <= 100;
+    allow create: if member(team) && validKey(item)
+     && request.resource.data.keys().hasOnly(['title','body','kind','secret','author','authorName','count','myCount','createdAt','comments','outcomes','source','lastActor','eventId','lastLog'])
+     && request.resource.data.title is string && request.resource.data.title.size() > 0 && request.resource.data.title.size() <= 100
+     && request.resource.data.body is string && request.resource.data.body.size() <= 3000 && request.resource.data.kind in ['prayer','task']
+     && request.resource.data.secret == false && request.resource.data.author == me() && request.resource.data.authorName == profile().name
+     && request.resource.data.count == 0 && request.resource.data.myCount == 0 && request.resource.data.createdAt == request.time && request.resource.data.comments == [] && request.resource.data.outcomes == {}
+     && request.resource.data.lastActor == '' && request.resource.data.eventId == '' && request.resource.data.lastLog == null
+     && request.resource.data.source == (get(/databases/$(database)/documents/teams/$(team)).data.leader == me() ? '팀장에게서 왔어요' : '')
+     && getAfter(/databases/$(database)/documents/teams/$(team)).data.lastItem == item
+     && getAfter(/databases/$(database)/documents/teams/$(team)).data.itemCount == get(/databases/$(database)/documents/teams/$(team)).data.itemCount + 1;
+    allow update: if member(team) && (logUpdate(team,item) || outcomeUpdate(team,item) || commentUpdate());
+    function logUpdate(team,item) {
+     let p=request.resource.data;
+     return p.diff(resource.data).affectedKeys().hasOnly(['count','lastLog','lastActor','eventId'])
+      && resource.data.outcomes.get(me(),null) == null && p.count == resource.data.count + 1 && p.lastLog == request.time && p.lastActor == me()
+      && freshEvent(team,item,p.eventId,'log') && getAfter(/databases/$(database)/documents/teams/$(team)/items/$(item)/actors/$(me())).data.lastEvent == p.eventId;
+    }
+    function outcomeUpdate(team,item) {
+     let p=request.resource.data;
+     let outcome=p.outcomes[me()];
+     return p.diff(resource.data).affectedKeys().hasOnly(['outcomes','lastActor','eventId']) && p.lastActor == me()
+      && resource.data.outcomes.get(me(),null) == null && p.outcomes.diff(resource.data.outcomes).affectedKeys().hasOnly([me()])
+      && outcome.keys().hasOnly(['rating','completedAt','count']) && outcome.rating is int && outcome.rating >= 1 && outcome.rating <= 5
+      && outcome.completedAt == request.time && outcome.count == resource.data.count && freshEvent(team,item,p.eventId,'complete');
+    }
+    function commentUpdate() {
+     let p=request.resource.data;
+     let c=p.comments[resource.data.comments.size()];
+     return p.diff(resource.data).affectedKeys().hasOnly(['comments']) && resource.data.comments.size() < 100
+      && p.comments.size() == resource.data.comments.size() + 1 && p.comments == resource.data.comments.concat([c])
+      && c.keys().hasOnly(['id','name','text','at']) && validKey(c.id) && c.name == profile().name && c.text is string && c.text.size() > 0 && c.text.size() <= 1000
+      && c.at is timestamp && c.at >= request.time - duration.value(1,'m') && c.at <= request.time + duration.value(1,'m');
+    }
+    match /actors/{uid} {
+     allow get: if member(team) && uid == me();
+     allow create,update: if member(team) && uid == me()
+      && request.resource.data.keys().hasOnly(['uid','count','lastLog','lastEvent']) && request.resource.data.uid == uid
+      && request.resource.data.lastLog == request.time && request.resource.data.count == (resource == null ? 1 : resource.data.count + 1)
+      && (resource == null || request.time >= resource.data.lastLog + duration.value(3,'s')) && freshEvent(team,item,request.resource.data.lastEvent,'log');
+    }
+    match /events/{event} {
+     allow get: if member(team) && (resource == null || resource.data.uid == me());
+     allow create: if member(team) && validKey(event) && request.resource.data.keys().hasOnly(['uid','kind','at'])
+      && request.resource.data.uid == me() && request.resource.data.kind in ['log','complete'] && request.resource.data.at == request.time
+      && getAfter(/databases/$(database)/documents/profiles/$(me())).data.lastEvent == {'team':team,'item':item,'event':event}
+      && getAfter(/databases/$(database)/documents/teams/$(team)/items/$(item)).data.eventId == event
+      && getAfter(/databases/$(database)/documents/teams/$(team)/items/$(item)).data.lastActor == me()
+      && ((request.resource.data.kind == 'log' && getAfter(/databases/$(database)/documents/teams/$(team)/items/$(item)).data.lastLog == request.time
+       && getAfter(/databases/$(database)/documents/teams/$(team)/items/$(item)/actors/$(me())).data.lastEvent == event)
+       || (request.resource.data.kind == 'complete' && getAfter(/databases/$(database)/documents/teams/$(team)/items/$(item)).data.outcomes[me()].completedAt == request.time));
+    }
    }
   }
-  match /{document=**} { allow read, write: if false; }
+  function validInvite(team,token,parent) {
+   let i=get(/databases/$(database)/documents/invites/$(token)).data;
+   return i.team == team && i.parentUid == parent && i.expiresAt > request.time && i.uses < 100
+    && exists(/databases/$(database)/documents/teams/$(team)/members/$(parent))
+    && getAfter(/databases/$(database)/documents/invites/$(token)).data.uses == i.uses + 1;
+  }
+  match /invites/{token} {
+   allow get: if signed();
+   allow create: if signed() && token.matches('^[a-f0-9]{48}$')
+    && request.resource.data.keys().hasOnly(['team','parentUid','createdAt','expiresAt','uses'])
+    && member(request.resource.data.team) && request.resource.data.parentUid == me() && request.resource.data.createdAt == request.time
+    && request.resource.data.expiresAt is timestamp && request.resource.data.expiresAt > request.time && request.resource.data.expiresAt <= request.time + duration.value(8,'d') && request.resource.data.uses == 0;
+   allow update: if signed() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['uses']) && resource.data.expiresAt > request.time
+    && request.resource.data.uses == resource.data.uses + 1 && request.resource.data.uses <= 100
+    && !exists(/databases/$(database)/documents/teams/$(resource.data.team)/members/$(me()))
+    && getAfter(/databases/$(database)/documents/teams/$(resource.data.team)/members/$(me())).data.inviteToken == token
+    && getAfter(/databases/$(database)/documents/teams/$(resource.data.team)/members/$(me())).data.joinedAt == request.time;
+  }
+  match /{document=**} { allow read,write: if false; }
  }
 }
