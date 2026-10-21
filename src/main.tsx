@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   Leaf,
@@ -86,6 +86,10 @@ function App() {
     coins: connected ? 0 : 40,
   });
   const [battle, setBattle] = useState(0);
+  // Each prayer/task owns its own click state; other entries stay interactive.
+  const recordLocks = useRef(new Set<string>());
+  const [recordingIds, setRecordingIds] = useState<string[]>([]);
+  const [lastRecordedId, setLastRecordedId] = useState<string | null>(null);
   const [signed, setSigned] = useState(false),
     [loaded, setLoaded] = useState(!connected);
   const [team, setTeam] = useState(""),
@@ -334,7 +338,12 @@ function App() {
     });
   }
   async function record(e: Entry) {
-    await run(async () => {
+    // A click must only affect the exact item selected, never all list buttons.
+    // Keep independent locks so another item does not look pressed/disabled.
+    if (busy || recordLocks.current.has(e.id)) return;
+    recordLocks.current.add(e.id);
+    setRecordingIds((ids) => [...ids, e.id]);
+    try {
       if (!e.secret && !connected) checkActivityLimit(profile);
       if (e.secret)
         storeSecrets(secrets.map((x) => (x.id === e.id ? logEntry(x) : x)));
@@ -344,13 +353,19 @@ function App() {
         storeItems(items.map((x) => (x.id === e.id ? logEntry(x) : x)));
         reward(10, 2);
       }
+      setLastRecordedId(e.id);
       if (!e.secret) setBattle((v) => v + 1);
       notify(
         e.secret
-          ? "비밀 기록을 이 기기에 저장했어요 🔒"
-          : "퀘스트 기록! +10 XP · +2 G ⚡",
+          ? `'${e.title}' 기록을 이 기기에 저장했어요 🔒`
+          : `'${e.title}' ${e.kind === "prayer" ? "기도" : "실천"} +1 · +10 XP`,
       );
-    });
+    } catch (error) {
+      notify(escError(error));
+    } finally {
+      recordLocks.current.delete(e.id);
+      setRecordingIds((ids) => ids.filter((id) => id !== e.id));
+    }
   }
   async function finish(e: Entry) {
     await run(async () => {
@@ -862,7 +877,7 @@ function App() {
                   <div className="entry-list">
                     {shown.length ? (
                       shown.map((e) => (
-                        <article className="entry" key={e.id}>
+                        <article className={lastRecordedId === e.id ? "entry just-recorded" : "entry"} key={e.id}>
                           <span className={`entry-icon ${e.kind}`}>
                             {e.secret ? (
                               <LockKeyhole size={21} />
@@ -899,7 +914,8 @@ function App() {
                             <button
                               className={`record ${e.kind}`}
                               aria-label={`${e.title} ${e.kind === "prayer" ? "기도" : "실천"} 기록`}
-                              disabled={busy}
+                              disabled={busy || recordingIds.includes(e.id)}
+                              aria-busy={recordingIds.includes(e.id)}
                               onClick={() => record(e)}
                             >
                               {e.kind === "prayer" ? (
@@ -908,9 +924,11 @@ function App() {
                                 <Check size={17} />
                               )}
                               <span>
-                                {e.kind === "prayer"
-                                  ? "기도했어요"
-                                  : "실천했어요"}
+                                {recordingIds.includes(e.id)
+                                  ? "기록 중..."
+                                  : e.kind === "prayer"
+                                    ? "기도했어요"
+                                    : "실천했어요"}
                               </span>
                               <b>+1</b>
                             </button>
