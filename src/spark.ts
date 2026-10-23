@@ -194,6 +194,22 @@ export function createSparkCommand(
     }
     const id = key(data.id),
       itemRef = doc(teamRef, "items", id);
+    if (action === "editItem") {
+      const title = text(data.title, 100);
+      if (typeof data.body !== "string" || data.body.length > 3000)
+        throw Error("내용은 3,000자까지 적을 수 있어요.");
+      return runTransaction(db, async (tx) => {
+        const item = await tx.get(itemRef);
+        if (
+          !item.exists() ||
+          item.data().author !== uid ||
+          item.data().outcomes[uid]
+        )
+          throw Error("내가 작성한 진행 중인 항목만 수정할 수 있어요.");
+        tx.update(itemRef, { title, body: data.body.trim() });
+        return { ok: true };
+      });
+    }
     if (action === "comment") {
       const content = text(data.text, 1000);
       return runTransaction(db, async (tx) => {

@@ -90,7 +90,14 @@ service cloud.firestore {
      && request.resource.data.source == (get(/databases/$(database)/documents/teams/$(team)).data.leader == me() ? '팀장에게서 왔어요' : '')
      && getAfter(/databases/$(database)/documents/teams/$(team)).data.lastItem == item
      && getAfter(/databases/$(database)/documents/teams/$(team)).data.itemCount == get(/databases/$(database)/documents/teams/$(team)).data.itemCount + 1;
-    allow update: if member(team) && (logUpdate(team,item) || outcomeUpdate(team,item) || commentUpdate());
+    allow update: if member(team) && (editUpdate() || logUpdate(team,item) || outcomeUpdate(team,item) || commentUpdate());
+    function editUpdate() {
+     let p=request.resource.data;
+     return resource.data.author == me() && resource.data.outcomes.get(me(),null) == null
+      && p.diff(resource.data).affectedKeys().hasOnly(['title','body'])
+      && p.title is string && p.title.matches('.*[^\\s].*') && p.title.size() <= 100
+      && p.body is string && p.body.size() <= 3000;
+    }
     function logUpdate(team,item) {
      let p=request.resource.data;
      return p.diff(resource.data).affectedKeys().hasOnly(['count','lastLog','lastActor','eventId'])

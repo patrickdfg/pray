@@ -23,6 +23,8 @@ import {
   Menu,
   Settings,
   Search,
+  Pencil,
+  Palette,
 } from "lucide-react";
 import {
   type Entry,
@@ -50,6 +52,9 @@ import {
 } from "./cloud";
 import "./style.css";
 import "./quest.css";
+import "./garden.css";
+import { RoomScene, RoomStudio, useRoomLayout } from "./room";
+import "./room.css";
 const uid = () => crypto.randomUUID();
 const escError = (e: unknown) => {
   const messages: Record<string, string> = {
@@ -86,6 +91,7 @@ function App() {
     coins: connected ? 0 : 40,
   });
   const [battle, setBattle] = useState(0);
+  const room = useRoomLayout(profile.uid);
   // Each prayer/task owns its own click state; other entries stay interactive.
   const recordLocks = useRef(new Set<string>());
   const [recordingIds, setRecordingIds] = useState<string[]>([]);
@@ -102,6 +108,9 @@ function App() {
   const [tab, setTab] = useState("home"),
     [filter, setFilter] = useState("all"),
     [search, setSearch] = useState("");
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }, [tab]);
   const [modal, setModal] = useState<
       "new" | "invite" | "setup" | "team" | null
     >(null),
@@ -119,6 +128,8 @@ function App() {
   const [comment, setComment] = useState(""),
     [rating, setRating] = useState(5),
     [teamDraft, setTeamDraft] = useState("");
+  const [editing, setEditing] = useState(false);
+  const [editDraft, setEditDraft] = useState({ title: "", body: "" });
   const [inviteToken, setInviteToken] = useState(
     () => new URLSearchParams(location.search).get("invite") || "",
   );
@@ -259,7 +270,7 @@ function App() {
         save("pray:demo:profile", next);
         setProfile(next);
       }
-      notify("새 아이템 획득! 컬렉션이 늘었어요!");
+      notify("새 소품을 구매했어요! 내 방에서 배치해 보세요 🐰");
     });
   }
   const all = [...items, ...secrets],
@@ -334,7 +345,7 @@ function App() {
       } else storeItems([...items, entry]);
       setModal(null);
       setDraft({ title: "", body: "", kind: "prayer", secret: false });
-      notify("새 퀘스트 등록 완료! 🎮");
+      notify("새 마음 심기 완료! 🎮");
     });
   }
   async function record(e: Entry) {
@@ -383,6 +394,37 @@ function App() {
       }
       setSelected(null);
       notify("오늘의 여정을 감사 기록에 남겼어요 🌼");
+    });
+  }
+  function beginEdit(e: Entry) {
+    setEditDraft({ title: e.title, body: e.body });
+    setSelected(e.id);
+    setEditing(true);
+  }
+  async function updateEntry() {
+    await run(async () => {
+      if (!current || current.author !== profile.uid || current.rating != null)
+        throw Error("내가 작성한 진행 중인 항목만 수정할 수 있어요.");
+      const title = editDraft.title.trim(),
+        body = editDraft.body.trim();
+      if (!title || title.length > 100 || body.length > 3000)
+        throw Error("제목과 내용의 길이를 확인해 주세요.");
+      const update = (entries: Entry[]) =>
+        entries.map((e) => (e.id === current.id ? { ...e, title, body } : e));
+      if (current.secret) storeSecrets(update(secrets));
+      else if (connected) {
+        try {
+          await command("editItem", { team, id: current.id, title, body });
+        } catch (error) {
+          if ((error as { code?: string }).code === "permission-denied")
+            throw Error(
+              "공유 이야기 수정 권한이 아직 적용되지 않았어요. 관리자가 Firebase 규칙을 배포한 뒤 다시 저장해 주세요. 작성한 내용은 그대로 있어요.",
+            );
+          throw error;
+        }
+      } else storeItems(update(items));
+      setEditing(false);
+      notify("마음을 담은 이야기를 수정했어요.");
     });
   }
   async function addComment() {
@@ -456,6 +498,7 @@ function App() {
     ["task", "작은 실천", Check],
     ["team", "우리 팀", Users],
     ["stats", "성장 기록", ChartNoAxesCombined],
+    ["room", "내 방 꾸미기", Palette],
     ["archive", "감사 보관함", BookOpen],
   ] as const;
   return (
@@ -477,7 +520,7 @@ function App() {
           }}
         >
           <span className="brand-icon">
-            <Leaf size={24} />
+            <span aria-hidden="true">🐰</span>
           </span>
           <span>
             기도숲<small>A LITTLE PRAYER, EVERY DAY</small>
@@ -516,7 +559,7 @@ function App() {
         </nav>
         <div className="sidebar-bottom">
           <div className="little-note">
-            <span>🌱</span>
+            <span>🐰</span>
             <strong>
               작은 기도가 모여
               <br />
@@ -679,8 +722,8 @@ function App() {
               <h1>
                 {tab === "home" ? (
                   <>
-                    {profile.name}님, 오늘도 한 걸음{" "}
-                    <span className="wave">🌿</span>
+                    {profile.name}님, 좋은 하루예요!{" "}
+                    <span className="wave">☀️</span>
                   </>
                 ) : (
                   nav.find((n) => n[0] === tab)?.[1]
@@ -688,12 +731,14 @@ function App() {
               </h1>
               <p>
                 {tab === "home"
-                  ? "마음을 담은 기도와 작은 실천으로, 오늘의 숲을 가꿔요."
-                  : tab === "stats"
-                    ? "레벨은 얼마나 올랐을까? 내 기록과 수집품을 확인해요."
-                    : tab === "team"
-                      ? "파티원을 초대하고, 함께 퀘스트를 클리어해요!"
-                      : "진행 중인 퀘스트와 기록을 확인해요."}
+                  ? "작은 기도와 응원으로, 오늘도 포근한 하루를 가꿔요."
+                  : tab === "room"
+                    ? "기도로 모은 코인으로, 나만의 포근한 방을 꾸며요."
+                    : tab === "stats"
+                      ? "차곡차곡 쌓인 마음과 소망이의 성장을 만나요."
+                      : tab === "team"
+                        ? "서로의 기도에 응원을 더하며 함께 자라요."
+                        : "작은 기도와 실천, 그 안에 담긴 마음을 만나요."}
               </p>
             </div>
             <button
@@ -706,7 +751,7 @@ function App() {
                 setModal("new");
               }}
             >
-              <Plus size={18} />새 퀘스트 만들기
+              <Plus size={18} />새 마음 기록하기
             </button>
           </div>
           {tab === "home" && (
@@ -715,11 +760,10 @@ function App() {
                 <div className="hero-copy">
                   <span className="pill">
                     <Leaf size={14} />
-                    YOUR GROWING FOREST
+                    마음이 자라는 작은 정원
                   </span>
                   <h2>
-                    작은 기도 하나,
-                    <br />
+                    작은 기도 하나, <br />
                     소망이 자라요.
                   </h2>
                   <p>
@@ -729,7 +773,7 @@ function App() {
                   </p>
                   <div className="level">
                     <span>
-                      Lv.{level} <b>소망의 모험가</b>
+                      Lv.{level} <b>함께 자라는 소망이</b>
                     </span>
                     <span>{progress} / 100 XP</span>
                   </div>
@@ -740,48 +784,23 @@ function App() {
                     <Trophy size={14} />
                     기도와 실천을 기록하면 +10 XP
                   </div>
+                  <button
+                    className="room-entry-button"
+                    onClick={() => setTab("room")}
+                  >
+                    <Palette size={16} />내 방 꾸미기
+                    <ChevronRight size={15} />
+                  </button>
                 </div>
                 <div
                   className={"battle-scene " + (battle ? "has-battled" : "")}
                   key={battle}
-                  aria-label="소망이와 슬라임의 퀘스트 장면"
+                  aria-label="토끼와 소망이의 포근한 기도 방"
                 >
-                  <div className="stage-tag">
-                    여정 {String(level).padStart(2, "0")}{" "}
-                    <span>소망이의 초원</span>
-                  </div>
-                  <div className="cloud c1" />
-                  <div className="cloud c2" />
-                  <div className="hill h1" />
-                  <div className="hill h2" />
-                  <div className="game-tree t1">♠</div>
-                  <div className="game-tree t2">♠</div>
-                  <div className="game-ground" />
-                  <div className="fighter hero-fighter">
-                    <div className="fighter-label">
-                      <b>소망이</b>
-                      <span>Lv.{level}</span>
-                    </div>
-                    <div className="hp-bar">
-                      <i />
-                    </div>
-                    <img
-                      src={`${import.meta.env.BASE_URL}sheep-hero.webp`}
-                      alt="별 지팡이와 하트 방패를 든 아기 양 모험가 소망이"
-                    />
-                  </div>
-                  <div className="fighter enemy-fighter">
-                    <div className="fighter-label">
-                      <b>미루기 슬라임</b>
-                    </div>
-                    <div className="hp-bar enemy-hp">
-                      <i style={{ width: Math.max(0, 100 - progress) + "%" }} />
-                    </div>
-                    <img
-                      src={`${import.meta.env.BASE_URL}slime.webp`}
-                      alt="통통한 파란색 미루기 슬라임"
-                    />
-                  </div>
+                  <RoomScene
+                    owned={profile.decorations || []}
+                    layout={room.layout}
+                  />
                   {battle > 0 && (
                     <>
                       <span className="attack-star">✦</span>
@@ -790,18 +809,9 @@ function App() {
                   )}
                   <div className="battle-tip">
                     {battle
-                      ? "NICE! 경험치를 획득했어요 ✨"
+                      ? "마음이 한 뼘 자랐어요 ✨"
                       : "오늘의 작은 실천이 소망이를 자라게 해요"}
                   </div>
-                </div>
-                <div className="garden-decorations">
-                  {decorations
-                    .filter((d) => profile.decorations?.includes(d.id))
-                    .map((d) => (
-                      <span key={d.id} title={d.name}>
-                        {d.icon}
-                      </span>
-                    ))}
                 </div>
               </div>
               <div className="metrics">
@@ -829,20 +839,33 @@ function App() {
               </div>
             </>
           )}
-          <div className="body-grid">
+          <div className={tab === "room" ? "body-grid room-body" : "body-grid"}>
             <section className="main-section">
+              {tab === "room" && (
+                <RoomStudio
+                  owned={profile.decorations || []}
+                  coins={profile.coins}
+                  busy={busy}
+                  connected={connected}
+                  layout={room.layout}
+                  update={room.update}
+                  persist={room.persist}
+                  purchase={purchase}
+                  notify={notify}
+                />
+              )}
               {["home", "prayer", "task", "archive"].includes(tab) && (
                 <>
                   <div className="section-title">
                     <div>
                       <h2>
                         {tab === "archive"
-                          ? "클리어한 퀘스트"
+                          ? "감사로 남은 이야기"
                           : tab === "task"
                             ? "오늘의 작은 실천"
                             : tab === "prayer"
                               ? "마음을 모으는 기도"
-                              : "오늘의 퀘스트"}{" "}
+                              : "오늘, 함께 나눌 마음"}{" "}
                         <span>{shown.length}</span>
                       </h2>
                       <p>제목을 누르면 이야기와 감동을 나눌 수 있어요.</p>
@@ -861,7 +884,7 @@ function App() {
                     {[
                       ["all", "전체"],
                       ["team", "함께 나눔"],
-                      ["mine", "내 퀘스트"],
+                      ["mine", "내가 심은 마음"],
                       ["secret", "나만의 비밀"],
                     ].map(([key, label]) => (
                       <button
@@ -877,7 +900,14 @@ function App() {
                   <div className="entry-list">
                     {shown.length ? (
                       shown.map((e) => (
-                        <article className={lastRecordedId === e.id ? "entry just-recorded" : "entry"} key={e.id}>
+                        <article
+                          className={
+                            lastRecordedId === e.id
+                              ? "entry just-recorded"
+                              : "entry"
+                          }
+                          key={e.id}
+                        >
                           <span className={`entry-icon ${e.kind}`}>
                             {e.secret ? (
                               <LockKeyhole size={21} />
@@ -890,6 +920,7 @@ function App() {
                           <button
                             className="entry-title"
                             onClick={() => {
+                              setEditing(false);
                               setSelected(e.id);
                               setRating(5);
                               setComment("");
@@ -910,6 +941,16 @@ function App() {
                               {e.comments.length} <ChevronRight size={12} />
                             </span>
                           </button>
+                          {e.author === profile.uid && e.rating == null && (
+                            <button
+                              className="entry-edit"
+                              aria-label={`${e.title} 수정`}
+                              onClick={() => beginEdit(e)}
+                            >
+                              <Pencil size={15} />
+                              <span>수정</span>
+                            </button>
+                          )}
                           {e.rating == null ? (
                             <button
                               className={`record ${e.kind}`}
@@ -946,18 +987,18 @@ function App() {
                         <h3>
                           {tab === "archive"
                             ? "아직 감사 기록이 없어요"
-                            : "아직 등록된 퀘스트가 없어요"}
+                            : "아직 심은 마음이 없어요"}
                         </h3>
                         <p>
                           {tab === "archive"
                             ? "항목을 열고 여정을 마무리하면 여기에 모여요."
-                            : "첫 번째 퀘스트를 등록해 볼까요?"}
+                            : "작은 기도 하나로 시작해 볼까요?"}
                         </p>
                         <button
                           className="secondary"
                           onClick={() => setModal("new")}
                         >
-                          퀘스트 등록
+                          마음 심기
                         </button>
                       </div>
                     )}
@@ -1053,8 +1094,15 @@ function App() {
                     </p>
                   </div>
                   <div className="panel">
-                    <h2>소망이의 모험 보상 상점</h2>
+                    <h2>소망이의 작은 선물 가게</h2>
                     <p>차곡차곡 모은 코인으로 새 아이템을 모아 보세요!</p>
+                    <button
+                      className="secondary room-shop-link"
+                      onClick={() => setTab("room")}
+                    >
+                      <Palette size={16} />
+                      구매한 소품으로 내 방 꾸미기
+                    </button>
                     <div className="decoration-shop">
                       {decorations.map((d) => (
                         <button
@@ -1132,26 +1180,25 @@ function App() {
             </section>
             <aside className="right-rail">
               <div className="companion panel">
-                <span className="eyebrow">MY COMPANION</span>
+                <span className="eyebrow">늘 곁에 있는 숲 친구</span>
                 <h3>함께 자라는 소망이</h3>
                 <div className="pet-picture">
                   <img
-                    src={`${import.meta.env.BASE_URL}sheep-hero.webp`}
-                    alt="하트 방패를 든 모험가 소망이"
+                    src={`${import.meta.env.BASE_URL}prayer-friends.webp`}
+                    alt="서로의 마음을 응원하는 토끼와 소망이"
                   />
                 </div>
                 <span className="pet-level">
                   Lv.{level} ·{" "}
                   {level < 5
-                    ? "초보 모험가"
+                    ? "새싹 친구"
                     : level < 10
-                      ? "숙련 모험가"
-                      : "소망의 기사"}
+                      ? "꽃피는 친구"
+                      : "든든한 숲 친구"}
                 </span>
                 <p>
-                  “오늘의 퀘스트도
-                  <br />
-                  함께 클리어하자!”
+                  “오늘, 함께 나눌 마음도
+                  <br />내 마음도 보탤게.”
                 </p>
                 <div className="pet-progress">
                   <span>다음 성장까지</span>
@@ -1246,7 +1293,7 @@ function App() {
             {modal === "new" && (
               <>
                 <span className="modal-emoji">🌱</span>
-                <h2>새 퀘스트 만들기</h2>
+                <h2>새 마음 기록하기</h2>
                 <p>지금 마음에 담고 있는 이야기를 적어 주세요.</p>
                 <div className="segmented">
                   <button
@@ -1267,7 +1314,7 @@ function App() {
                   <input
                     autoFocus
                     maxLength={100}
-                    placeholder="어떤 퀘스트에 도전할까요?"
+                    placeholder="어떤 마음을 심어 볼까요?"
                     value={draft.title}
                     onChange={(e) =>
                       setDraft({ ...draft, title: e.target.value })
@@ -1311,7 +1358,7 @@ function App() {
                   </p>
                 )}
                 <button className="primary full" disabled={busy} onClick={add}>
-                  {busy ? "등록 중…" : "퀘스트 등록"}
+                  {busy ? "등록 중…" : "마음 심기"}
                 </button>
               </>
             )}
@@ -1426,7 +1473,7 @@ function App() {
                   </button>
                 </div>
                 <div className="panel free-plan">
-                  <h3>무료 플레이 한도</h3>
+                  <h3>함께 쓰는 숲의 한도</h3>
                   <p>
                     팀원 최대 100명 · 공유 퀘스트 100개 · 항목당 댓글 100개 ·
                     계정별 하루 보상 기록 200회(한국 자정 초기화).
@@ -1468,105 +1515,171 @@ function App() {
                 <span className="eyebrow">
                   {current.secret
                     ? "나만의 비밀"
-                    : `${current.authorName}님의 퀘스트`}
+                    : `${current.authorName}님의 이야기`}
                 </span>
-                <h2>{current.title}</h2>
-                <div className="detail-body">
-                  {current.body || "아직 자세한 이야기가 없어요."}
-                </div>
-                <div className="detail-count">
-                  <Heart size={17} />{" "}
-                  {current.kind === "prayer" ? "함께 기도한" : "실천을 남긴"}{" "}
-                  횟수 <strong>{current.count}번</strong>
-                </div>
-                {current.rating == null ? (
-                  <>
-                    <button
-                      className="primary full"
-                      disabled={busy}
-                      onClick={() => record(current)}
-                    >
-                      {current.kind === "prayer"
-                        ? "♡ 기도했어요"
-                        : "✓ 실천했어요"}{" "}
-                      +1
-                    </button>
-                    {
-                      <details className="finish">
-                        <summary>이 여정을 마무리하고 싶어요</summary>
-                        <p>
-                          지금 느끼는 변화를 골라 주세요. 어떤 단계도 소중해요.
-                        </p>
-                        <div className="rating-buttons">
-                          {ratings.map((label, i) => (
-                            <button
-                              key={i}
-                              className={rating === i + 1 ? "selected" : ""}
-                              title={label}
-                              onClick={() => setRating(i + 1)}
-                            >
-                              {i + 1}
-                              <small>{i * 25}%</small>
-                            </button>
-                          ))}
-                        </div>
-                        <p className="rating-label">{ratings[rating - 1]}</p>
-                        <button
-                          className="secondary full"
-                          disabled={busy}
-                          onClick={() => finish(current)}
-                        >
-                          감사 보관함에 남기기
-                        </button>
-                      </details>
-                    }
-                  </>
-                ) : (
-                  <div className="hint">
-                    {current.rating}단계 · 체감 {percent(current.rating)}% ·{" "}
-                    {ratings[current.rating - 1]}
+                {editing ? (
+                  <div className="edit-form">
+                    <h2>이야기 수정하기</h2>
+                    <label>
+                      제목
+                      <input
+                        aria-label="제목"
+                        autoFocus
+                        maxLength={100}
+                        value={editDraft.title}
+                        onChange={(e) =>
+                          setEditDraft({ ...editDraft, title: e.target.value })
+                        }
+                      />
+                    </label>
+                    <label>
+                      마음에 담긴 이야기
+                      <textarea
+                        aria-label="마음에 담긴 이야기"
+                        rows={4}
+                        maxLength={3000}
+                        value={editDraft.body}
+                        onChange={(e) =>
+                          setEditDraft({ ...editDraft, body: e.target.value })
+                        }
+                      />
+                    </label>
+                    <div className="edit-actions">
+                      <button
+                        className="secondary"
+                        disabled={busy}
+                        onClick={() => setEditing(false)}
+                      >
+                        취소
+                      </button>
+                      <button
+                        className="primary"
+                        disabled={busy}
+                        onClick={updateEntry}
+                      >
+                        {busy ? "저장 중…" : "수정 저장"}
+                      </button>
+                    </div>
                   </div>
+                ) : (
+                  <h2>{current.title}</h2>
                 )}
-                <div className="comments">
-                  <h3>
-                    마음에 남은 감동 <span>{current.comments.length}</span>
-                  </h3>
-                  {current.comments.map((c) => (
-                    <div className="comment" key={c.id}>
-                      <span>🌷</span>
-                      <div>
-                        <strong>
-                          {c.name}
-                          <small>
-                            {new Date(c.at).toLocaleDateString("ko-KR")}
-                          </small>
-                        </strong>
-                        <p>{c.text}</p>
+                {!editing &&
+                  current.author === profile.uid &&
+                  current.rating == null && (
+                    <button
+                      className="edit-link"
+                      onClick={() => beginEdit(current)}
+                    >
+                      <Pencil size={15} /> 이야기 수정
+                    </button>
+                  )}
+                {!editing && (
+                  <>
+                    <div className="detail-body">
+                      {current.body || "아직 자세한 이야기가 없어요."}
+                    </div>
+                    <div className="detail-count">
+                      <Heart size={17} />{" "}
+                      {current.kind === "prayer"
+                        ? "함께 기도한"
+                        : "실천을 남긴"}{" "}
+                      횟수 <strong>{current.count}번</strong>
+                    </div>
+                    {current.rating == null ? (
+                      <>
+                        <button
+                          className="primary full"
+                          disabled={busy || recordingIds.includes(current.id)}
+                          aria-busy={recordingIds.includes(current.id)}
+                          onClick={() => record(current)}
+                        >
+                          {current.kind === "prayer"
+                            ? "♡ 기도했어요"
+                            : "✓ 실천했어요"}{" "}
+                          +1
+                        </button>
+                        {
+                          <details className="finish">
+                            <summary>이 여정을 마무리하고 싶어요</summary>
+                            <p>
+                              지금 느끼는 변화를 골라 주세요. 어떤 단계도
+                              소중해요.
+                            </p>
+                            <div className="rating-buttons">
+                              {ratings.map((label, i) => (
+                                <button
+                                  key={i}
+                                  className={rating === i + 1 ? "selected" : ""}
+                                  title={label}
+                                  onClick={() => setRating(i + 1)}
+                                >
+                                  {i + 1}
+                                  <small>{i * 25}%</small>
+                                </button>
+                              ))}
+                            </div>
+                            <p className="rating-label">
+                              {ratings[rating - 1]}
+                            </p>
+                            <button
+                              className="secondary full"
+                              disabled={busy}
+                              onClick={() => finish(current)}
+                            >
+                              감사 보관함에 남기기
+                            </button>
+                          </details>
+                        }
+                      </>
+                    ) : (
+                      <div className="hint">
+                        {current.rating}단계 · 체감 {percent(current.rating)}% ·{" "}
+                        {ratings[current.rating - 1]}
+                      </div>
+                    )}
+                    <div className="comments">
+                      <h3>
+                        마음에 남은 감동 <span>{current.comments.length}</span>
+                      </h3>
+                      {current.comments.map((c) => (
+                        <div className="comment" key={c.id}>
+                          <span>🌷</span>
+                          <div>
+                            <strong>
+                              {c.name}
+                              <small>
+                                {new Date(c.at).toLocaleDateString("ko-KR")}
+                              </small>
+                            </strong>
+                            <p>{c.text}</p>
+                          </div>
+                        </div>
+                      ))}
+                      {!current.comments.length && (
+                        <p className="hint">
+                          작은 감동이나 신나는 응원을 남겨 주세요.
+                        </p>
+                      )}
+                      <div className="comment-input">
+                        <textarea
+                          rows={2}
+                          maxLength={1000}
+                          placeholder="오늘 마음에 남은 감동은…"
+                          value={comment}
+                          onChange={(e) => setComment(e.target.value)}
+                        />
+                        <button
+                          aria-label="감동 남기기"
+                          disabled={busy || !comment.trim()}
+                          onClick={addComment}
+                        >
+                          <Send size={18} />
+                        </button>
                       </div>
                     </div>
-                  ))}
-                  {!current.comments.length && (
-                    <p className="hint">
-                      작은 감동이나 신나는 응원을 남겨 주세요.
-                    </p>
-                  )}
-                  <div className="comment-input">
-                    <textarea
-                      rows={2}
-                      maxLength={1000}
-                      placeholder="오늘 마음에 남은 감동은…"
-                      value={comment}
-                      onChange={(e) => setComment(e.target.value)}
-                    />
-                    <button
-                      aria-label="감동 남기기"
-                      disabled={busy || !comment.trim()}
-                      onClick={addComment}
-                    >
-                      <Send size={18} />
-                    </button>
-                  </div>
-                </div>
+                  </>
+                )}
               </>
             )}
           </section>

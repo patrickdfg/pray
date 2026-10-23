@@ -19,3 +19,31 @@
 > One original cute sky-blue slime monster mobile RPG game sprite, full body centered isolated on transparent background. A plump teardrop jelly blob with a little tuft, dark navy thick clean uniform cartoon outlines, two big black oval eyes with white shines, tiny wobbly surprised mouth, pink cheeks, two-tone cyan cel shading and one large white glossy highlight. Friendly silly adorable not scary. Tiny violet sleepy cloud perched on head. Facing left three-quarter view. Extremely simple bold flat 2D game art, readable at 100px. No text no numbers no watermark no scenery no realistic texture no painterly shading. Generous padding.
 
 장면의 하늘·언덕·체력바·공격 효과는 코드로 구현했고 캐릭터는 독립된 래스터 에셋입니다.
+
+## 2026-10-23 · 기도숲 토끼 일러스트
+
+도구: OpenAI 내장 image_gen. 사용자 시안은 스타일 참고로만 사용했으며 원본 파일은 저장소에 포함하지 않았습니다.
+
+### 방 꾸미기 소품
+
+`public/room-flower.webp`, `public/room-lantern.webp`, `public/room-fountain.webp`는 같은 내장 도구로 각각 투명 배경을 생성했습니다. 결과의 배경 투명도를 유지하며 WebP로 인코딩했습니다. 공통 프롬프트에서 아래 대상을 각기 한 번씩 지정했습니다.
+
+공통 프롬프트:
+> Use case: illustration-story. Asset type: one transparent-background furniture sprite for the Korean prayer app 기도숲's cozy bunny room. [SUBJECT] Match a cozy cute bunny room illustration: soft painterly cartoon shading, rounded simple shapes, warm rosy brown delicate outlines, warm pink, butter cream and lavender palette, gentle sunlight, polished charming storybook mobile game art. Entire object fully visible centered, tight composition with 10% transparent margin, flat front-facing ground plane with a very subtle contact shadow, no room/background/environment, no text, no numbers, no watermark. True transparent background. Only ONE object.
+
+SUBJECT:
+- Flower: One single cute pink terracotta flower pot with three blooming pink tulips and tiny cream daisies, front three-quarter view, a miniature dollhouse decoration, no character.
+- Lantern: One single cute miniature table lamp, rounded cream and pink lampshade with scalloped trim, warm glowing yellow light, blush pink ceramic round base, small heart detail, front three-quarter view, dollhouse furniture decoration.
+- Fountain: One single cute miniature indoor two-tier fountain, cream ceramic with a blush pink heart topper, tiny turquoise-blue water streams flowing into a round lavender bowl, a few tiny pink flowers at the base, front three-quarter view, dollhouse furniture decoration.
+
+### public/prayer-friends.webp
+투명 배경, 토끼와 소망이가 작은 하트를 함께 든 정원. 옆의 숲 친구 카드에 사용합니다.
+
+프롬프트:
+> Use case: illustration-story. Asset type: transparent hero illustration for Korean prayer and encouragement app 기도숲. Create an original adorable cream white bunny with long ears, tiny pink cheeks and closed gentle eyes, sitting beside a small fluffy cream lamb friend in a little garden of lavender flowers and pink daisies, holding a tiny pink heart together. Warm pastel pink, butter cream, lavender and muted sage. Soft hand painted storybook gouache, subtle paper texture, rounded simple shapes, delicate brown outlines, generous transparent margin, cohesive compact landscape composition. Calm, comforting, hopeful, polished mobile app illustration. No text, no logo, no watermark, no weapons, no copied existing character. True transparent background.
+
+### public/bunny-prayer-room.webp
+햇살 드는 토끼의 방. 사용자가 새로 첨부한 시안의 색감과 포근한 실내 분위기를 반영한 홈 메인 그림입니다. 글자는 이미지에 넣지 않고 앱에서 읽을 수 있는 텍스트로 표시합니다.
+
+프롬프트:
+> Use case illustration-story. The input is a style and mood reference, NOT an edit target or a UI to copy. Create ONE beautiful original landscape hero illustration for Korean prayer app 기도숲, a fully painted cozy bunny room (no interface or phone frame). Match the reference's polished cute rounded cartoon aesthetic, warm rosy outlines, blush pink, peach cream, butter yellow, lavender and leafy green, rich cozy props and softly glowing sunlight. Main subject: an adorable white bunny with long pink inner ears and big pink headphones, small dark warm brown outline, eyes gently closed with blush cheeks, writing a prayer and gratitude journal at a light wooden desk by a window. A tiny fluffy lamb friend sits beside the journal, a pink rabbit mug, small warm yellow desk lamp, pastel stacked books, potted pink tulips and hanging leafy vines frame the room. Puffy blue sky and warm morning light through the window. The bunny should be the clear center subject, full ears visible, room items distributed across landscape, especially lush botanical edges. No legible text, no logos, no word Study Bunny, no timer, no typography, no UI, no watermark. Image should work as the full width upper hero artwork on a mobile app with rounded corners; use landscape 3:2 composition.

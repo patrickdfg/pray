@@ -126,6 +126,36 @@ const ts = require("typescript");
       );
       await assertFails(updateDoc(doc(f, itemPath), { secret: true }));
     });
+    await test("Only the active item's author can edit title and body; rewards stay intact", async () => {
+      await lead("editItem", {
+        team,
+        id,
+        title: "수정된 기도",
+        body: "함께 나누는 수정",
+      });
+      const edited = (await getDoc(doc(l, itemPath))).data();
+      assert.equal(edited.title, "수정된 기도");
+      assert.equal(edited.body, "함께 나누는 수정");
+      assert.equal(edited.count, 0);
+      assert.deepEqual(edited.comments, []);
+      assert.equal((await getDoc(doc(l, "profiles/leader"))).data().xp, 0);
+      await assert.rejects(
+        friend("editItem", { team, id, title: "남의 글", body: "침범" }),
+      );
+      await assertFails(updateDoc(doc(f, itemPath), { title: "직접 우회" }));
+      await assertFails(
+        updateDoc(doc(l, itemPath), { title: "", body: "빈 제목" }),
+      );
+      await assertFails(
+        updateDoc(doc(l, itemPath), { title: "초과", body: "x".repeat(3001) }),
+      );
+      await assertFails(
+        updateDoc(doc(l, itemPath), { title: "권한 위조", author: "friend" }),
+      );
+      await assertFails(
+        updateDoc(doc(l, itemPath), { title: "횟수 위조", count: 99 }),
+      );
+    });
     await test("Activity reward is atomic and idempotent", async () => {
       await friend("log", { team, id, eventId: "event1" });
       await friend("log", { team, id, eventId: "event1" });
@@ -160,6 +190,14 @@ const ts = require("typescript");
         updateDoc(doc(f, itemPath), { "outcomes.leader.rating": 1 }),
       );
       await assert.rejects(friend("log", { team, id, eventId: "closed" }));
+    });
+    await test("Archived entries cannot be edited even by their author", async () => {
+      await assert.rejects(
+        lead("editItem", { team, id, title: "완료 후 수정", body: "불가" }),
+      );
+      await assertFails(
+        updateDoc(doc(l, itemPath), { title: "직접 완료 후 수정" }),
+      );
     });
     await test("Comments append with real author and cannot rewrite history", async () => {
       await friend("comment", { team, id, text: "응원해!" });
