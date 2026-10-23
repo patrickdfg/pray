@@ -10,15 +10,29 @@ import {
   Palette,
   Save,
 } from "lucide-react";
-import { decorations } from "./domain";
+import {
+  roomItems,
+  roomCategories,
+  roomPacks,
+  ownsRoomItem,
+} from "./room-catalog";
 
 type Position = { x: number; y: number; hidden?: boolean };
 export type RoomLayout = { mood: string; positions: Record<string, Position> };
-const defaults: Record<string, Position> = {
-  flower: { x: 17, y: 90 },
-  lantern: { x: 80, y: 82 },
-  fountain: { x: 73, y: 97 },
-};
+const defaults = Object.fromEntries(
+  roomItems.map((item) => [
+    item.id,
+    { x: item.x, y: item.y, hidden: item.bonus === true },
+  ]),
+);
+function boundedPosition(id: string, position: Position): Position {
+  const width = roomItems.find((item) => item.id === id)?.width || 23;
+  return {
+    ...position,
+    x: clamp(position.x, width / 2 + 1, 99 - width / 2),
+    y: clamp(position.y, Math.max(40, width * 1.5 + 3), 97),
+  };
+}
 const moods = [
   { id: "morning", name: "아침 햇살", icon: "☀️" },
   { id: "sunset", name: "분홍 노을", icon: "🌷" },
@@ -38,14 +52,14 @@ export function useRoomLayout(uid: string) {
       );
       if (!data || !moods.some((m) => m.id === data.mood)) return fresh();
       const positions: Record<string, Position> = {};
-      for (const item of decorations) {
+      for (const item of roomItems) {
         const p = data.positions?.[item.id];
         if (p && Number.isFinite(p.x) && Number.isFinite(p.y))
-          positions[item.id] = {
-            x: clamp(p.x, 13, 87),
-            y: clamp(p.y, 40, 97),
+          positions[item.id] = boundedPosition(item.id, {
+            x: p.x,
+            y: p.y,
             hidden: p.hidden === true,
-          };
+          });
       }
       return { mood: data.mood, positions };
     } catch {
@@ -87,7 +101,7 @@ export function RoomScene({
   const scene = useRef<HTMLDivElement>(null);
   const drag = useRef<{ id: string; pointer: number } | null>(null);
   const move = (id: string, x: number, y: number) =>
-    onMove?.(id, { x: clamp(x, 13, 87), y: clamp(y, 40, 97) });
+    onMove?.(id, boundedPosition(id, { x, y }));
   return (
     <div
       ref={scene}
@@ -110,9 +124,9 @@ export function RoomScene({
         <br />
         충분히 잘하고 있어요!<span>♡</span>
       </div>
-      {decorations
+      {roomItems
         .filter(
-          (d) => owned.includes(d.id) && !positionFor(layout, d.id).hidden,
+          (d) => ownsRoomItem(owned, d) && !positionFor(layout, d.id).hidden,
         )
         .map((d) => {
           const p = positionFor(layout, d.id);
@@ -126,7 +140,8 @@ export function RoomScene({
           const style = {
             left: `${p.x}%`,
             top: `${p.y}%`,
-            zIndex: Math.round(p.y),
+            zIndex: d.id === "rug" ? 2 : Math.round(p.y),
+            width: `${d.width}%`,
           };
           return editable ? (
             <button
@@ -211,11 +226,33 @@ export function RoomStudio({
 }) {
   const [category, setCategory] = useState("shop");
   const [selected, setSelected] = useState("");
-  const selectedItem = decorations.find(
-    (d) => d.id === selected && owned.includes(d.id),
+  const [itemFilter, setItemFilter] = useState("all");
+  const [query, setQuery] = useState("");
+  const [pendingItem, setPendingItem] = useState("");
+  const selectedItem = roomItems.find(
+    (d) => d.id === selected && ownsRoomItem(owned, d),
   );
+  const available = roomItems.filter((d) => ownsRoomItem(owned, d));
+  const catalog = roomItems.filter(
+    (d) =>
+      (category === "shop" || ownsRoomItem(owned, d)) &&
+      (itemFilter === "all" || d.category === itemFilter) &&
+      d.name.includes(query.trim()),
+  );
+  useEffect(() => {
+    const item = roomItems.find((d) => d.id === pendingItem);
+    if (item && ownsRoomItem(owned, item)) {
+      place(item.id, { ...positionFor(layout, item.id), hidden: false });
+      setSelected(item.id);
+      setPendingItem("");
+      notify(`${item.name}, 방에 배치했어요 🐰`);
+    }
+  }, [owned, pendingItem]);
   function place(id: string, position: Position) {
-    update({ ...layout, positions: { ...layout.positions, [id]: position } });
+    update({
+      ...layout,
+      positions: { ...layout.positions, [id]: boundedPosition(id, position) },
+    });
   }
   function nudge(x: number, y: number) {
     if (!selectedItem) return;
@@ -344,74 +381,119 @@ export function RoomStudio({
             </div>
           ) : (
             <>
-              <div className="room-catalog">
-                {decorations
-                  .filter((d) => category === "shop" || owned.includes(d.id))
-                  .map((d) => {
-                    const has = owned.includes(d.id),
-                      hidden = positionFor(layout, d.id).hidden;
-                    return (
-                      <article className="furniture-card" key={d.id}>
-                        <div className="furniture-image">
-                          <img
-                            src={`${import.meta.env.BASE_URL}room-${d.id}.webp`}
-                            alt={d.name}
-                          />
-                        </div>
-                        <h3>{d.name}</h3>
-                        <p>
-                          {has ? (
-                            <>
-                              <Check size={13} />내 소품
-                            </>
-                          ) : (
-                            <>
-                              <Coins size={13} />
-                              {d.cost} 코인
-                            </>
-                          )}
-                        </p>
-                        {has ? (
-                          <button
-                            className="secondary"
-                            onClick={() => {
-                              if (hidden) {
-                                place(d.id, {
-                                  ...positionFor(layout, d.id),
-                                  hidden: false,
-                                });
-                                setSelected(d.id);
-                              } else {
-                                place(d.id, {
-                                  ...positionFor(layout, d.id),
-                                  hidden: true,
-                                });
-                                if (selected === d.id) setSelected("");
-                              }
-                            }}
-                          >
-                            {hidden ? "방에 배치" : "보관하기"}
-                          </button>
-                        ) : (
-                          <button
-                            className="primary"
-                            disabled={busy || coins < d.cost}
-                            onClick={() => purchase(d.id)}
-                          >
-                            {coins < d.cost
-                              ? `${d.cost - coins} 코인 더 필요`
-                              : `${d.cost} 코인으로 구매`}
-                          </button>
-                        )}
-                      </article>
-                    );
-                  })}
+              <div className="catalog-intro">
+                <strong>총 {roomItems.length}종</strong>
+                <span>
+                  보유 {available.length}종 · 세트 하나에 7종씩 열려요
+                </span>
               </div>
-              {category === "owned" && !owned.length && (
+              <div className="room-pack-summary">
+                {roomPacks.map((pack) => (
+                  <span
+                    key={pack.id}
+                    className={owned.includes(pack.id) ? "unlocked" : ""}
+                  >
+                    {pack.icon} {pack.label}{" "}
+                    {owned.includes(pack.id) ? "✓" : `${pack.cost} 코인`}
+                  </span>
+                ))}
+              </div>
+              <div className="room-item-filters" aria-label="소품 종류">
+                {roomCategories.map(([id, label, icon]) => (
+                  <button
+                    key={id}
+                    aria-pressed={itemFilter === id}
+                    onClick={() => setItemFilter(id)}
+                  >
+                    {icon} {label}
+                  </button>
+                ))}
+              </div>
+              <label className="room-search">
+                <span>소품 찾기</span>
+                <input
+                  type="search"
+                  aria-label="소품 검색"
+                  placeholder="토끼, 꽃병, 소파…"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                />
+              </label>
+              <div className="room-catalog">
+                {catalog.map((d) => {
+                  const has = ownsRoomItem(owned, d),
+                    hidden = positionFor(layout, d.id).hidden;
+                  const pack = roomPacks.find((p) => p.id === d.unlock)!;
+                  return (
+                    <article className="furniture-card" key={d.id}>
+                      {d.bonus && <span className="new-prop-badge">NEW</span>}
+                      <div className="furniture-image">
+                        <img
+                          loading="lazy"
+                          src={`${import.meta.env.BASE_URL}room-${d.id}.webp`}
+                          alt={d.name}
+                        />
+                      </div>
+                      <h3>{d.name}</h3>
+                      <p>
+                        {has ? (
+                          <>
+                            <Check size={13} />내 소품
+                          </>
+                        ) : (
+                          <>
+                            <Coins size={13} />
+                            {pack.cost} 코인 · 7종 세트
+                          </>
+                        )}
+                      </p>
+                      <small className="item-pack-label">
+                        {pack.label} 포함
+                      </small>
+                      {has ? (
+                        <button
+                          className="secondary"
+                          aria-label={`${d.name} ${hidden ? "방에 배치" : "보관하기"}`}
+                          onClick={() => {
+                            place(d.id, {
+                              ...positionFor(layout, d.id),
+                              hidden: !hidden,
+                            });
+                            setSelected(
+                              hidden ? d.id : selected === d.id ? "" : selected,
+                            );
+                            if (hidden) notify(`${d.name}, 방에 배치했어요 🐰`);
+                          }}
+                        >
+                          {hidden ? "방에 배치" : "보관하기"}
+                        </button>
+                      ) : (
+                        <button
+                          className="primary"
+                          disabled={busy || coins < pack.cost}
+                          onClick={async () => {
+                            setPendingItem(d.id);
+                            await purchase(pack.id);
+                          }}
+                        >
+                          {coins < pack.cost
+                            ? `${pack.cost - coins} 코인 더 필요`
+                            : `${pack.cost} 코인으로 세트 열기`}
+                        </button>
+                      )}
+                    </article>
+                  );
+                })}
+              </div>
+              {!catalog.length && (
                 <div className="empty">
-                  <span>🎁</span>
-                  <h3>첫 소품을 기다리는 방이에요</h3>
-                  <p>기도와 실천을 기록해 코인을 모아 보세요.</p>
+                  <span>🎀</span>
+                  <h3>
+                    {query
+                      ? "찾는 소품이 아직 없어요"
+                      : "이 분류에는 보유한 소품이 없어요"}
+                  </h3>
+                  <p>다른 분류를 고르거나 소품 가게에서 세트를 열어 보세요.</p>
                 </div>
               )}
             </>
@@ -421,7 +503,9 @@ export function RoomStudio({
           {connected
             ? "구매한 소품과 코인은 계정에 저장돼요. "
             : "체험용 코인과 소품은 이 브라우저에 저장돼요. "}
-          소품 위치와 방 분위기는 ‘꾸미기 저장’을 누르면 현재 기기에 저장돼요.
+          기존 꽃밭·랜턴·분수 구매에 새 소품 6종씩을 추가로 드려요. 추가 소품은
+          원하는 것만 골라 배치해요. 소품 위치와 방 분위기는 ‘꾸미기 저장’을
+          누르면 현재 기기에 저장돼요.
         </p>
       </section>
     </div>

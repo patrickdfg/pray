@@ -47,3 +47,31 @@ SUBJECT:
 
 프롬프트:
 > Use case illustration-story. The input is a style and mood reference, NOT an edit target or a UI to copy. Create ONE beautiful original landscape hero illustration for Korean prayer app 기도숲, a fully painted cozy bunny room (no interface or phone frame). Match the reference's polished cute rounded cartoon aesthetic, warm rosy outlines, blush pink, peach cream, butter yellow, lavender and leafy green, rich cozy props and softly glowing sunlight. Main subject: an adorable white bunny with long pink inner ears and big pink headphones, small dark warm brown outline, eyes gently closed with blush cheeks, writing a prayer and gratitude journal at a light wooden desk by a window. A tiny fluffy lamb friend sits beside the journal, a pink rabbit mug, small warm yellow desk lamp, pastel stacked books, potted pink tulips and hanging leafy vines frame the room. Puffy blue sky and warm morning light through the window. The bunny should be the clear center subject, full ears visible, room items distributed across landscape, especially lush botanical edges. No legible text, no logos, no word Study Bunny, no timer, no typography, no UI, no watermark. Image should work as the full width upper hero artwork on a mobile app with rounded corners; use landscape 3:2 composition.
+
+
+## 21종 소품 확장 · 2026-10-23
+
+OpenAI 내장 image_gen으로 18종을 각각 생성했습니다. 모바일용으로 최대 512px WebP(품질 88)로 인코딩하고 투명도를 유지했습니다. 기존 3종과 합해 21종입니다. 파일은 `public/room-<id>.webp`이며, 구매 세트와 표시 정보는 `src/room-catalog.ts`에서 관리합니다.
+
+공통 프롬프트:
+> Use case: illustration-story. Asset type: ONE individual transparent furniture sprite for a cozy pastel bunny room mobile game. Subject: [SUBJECT]. Style: polished cute storybook mobile game illustration, rounded shapes, delicate warm rosy-brown outlines, soft painterly shading, butter cream, blush pink, lavender, muted sage, gentle warm sunlight. Isolated single complete object centered fully visible with 10% transparent margin. Coherent dollhouse scale and friendly front three-quarter view, subtle contact shadow only. No room, no other props, no environmental background, no lettering, no watermark. True transparent background.
+
+대상별 SUBJECT:
+- `succulent`: a tiny mint green ceramic pot with a plump green succulent and a pink heart emblem
+- `monstera`: a small leafy monstera plant in a cream basket with a lavender ribbon
+- `books`: a neat stack of three pastel pink, mint and lavender books, a tiny heart bookmark
+- `journal`: an open cream gratitude journal with a pink cover, a small pink pencil and a flower bookmark, no writing
+- `teacup`: a cute pink rabbit shaped ceramic teacup on a cream saucer with one heart shaped cookie
+- `vase`: a rounded lavender vase with three pink daisies and two cream blossoms
+- `bunny-plush`: a sitting white bunny plush doll with pink ears and a pink bow, cuddly little toy
+- `teddy`: a small honey beige teddy bear plush with a lavender bow holding a pink heart
+- `cat-cushion`: a rounded sleeping cream kitten cushion with tiny ears, pink cheeks and closed eyes
+- `star-cushion`: a soft pale yellow five point star shaped cushion with tiny closed eyes and pink cheeks
+- `moon-lamp`: a glowing crescent moon night light on a lavender cloud base with one tiny golden star
+- `fairy-lights`: a compact curved string of five warm yellow glowing star fairy lights on a delicate pink cord, hanging decoration
+- `sofa`: a miniature soft pink two-seat sofa with rounded arms and two cream heart cushions, front three-quarter view
+- `rug`: a miniature oval lavender fluffy rug with scalloped cream edge and a tiny pink flower motif, viewed slightly from above
+- `shelf`: a miniature cream two-level bookshelf holding pastel books and a tiny pink vase, front three-quarter view
+- `table`: a miniature cream round wooden coffee table with short rounded legs and a tiny pink heart on top, front three-quarter view
+- `chair`: a miniature pink wooden chair with bunny ear shaped backrest and a cream round cushion, front three-quarter view
+- `clock`: a miniature cream and blush pink mantel clock shaped like a tiny cottage with a heart above its round clock face, no numerals or text

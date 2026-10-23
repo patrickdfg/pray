@@ -1095,7 +1095,10 @@ function App() {
                   </div>
                   <div className="panel">
                     <h2>소망이의 작은 선물 가게</h2>
-                    <p>차곡차곡 모은 코인으로 새 아이템을 모아 보세요!</p>
+                    <p>
+                      소품 하나를 구매하면 같은 세트의 꾸미기 소품 7종이 함께
+                      열려요.
+                    </p>
                     <button
                       className="secondary room-shop-link"
                       onClick={() => setTab("room")}

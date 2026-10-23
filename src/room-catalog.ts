@@ -1,0 +1,242 @@
+import { decorations } from "./domain";
+
+export type RoomItem = {
+  id: string;
+  name: string;
+  unlock: string;
+  category: string;
+  width: number;
+  x: number;
+  y: number;
+  bonus?: boolean;
+};
+export const roomCategories = [
+  ["all", "전체", "🎀"],
+  ["plants", "식물", "🌷"],
+  ["stationery", "책·문구", "📚"],
+  ["friends", "인형·쿠션", "🧸"],
+  ["lights", "조명", "💡"],
+  ["furniture", "가구", "🛋️"],
+] as const;
+export const roomItems: RoomItem[] = [
+  {
+    id: "flower",
+    name: "작은 꽃밭",
+    unlock: "flower",
+    category: "plants",
+    width: 23,
+    x: 17,
+    y: 90,
+  },
+  {
+    id: "lantern",
+    name: "별빛 랜턴",
+    unlock: "lantern",
+    category: "lights",
+    width: 23,
+    x: 80,
+    y: 82,
+  },
+  {
+    id: "fountain",
+    name: "소망의 분수",
+    unlock: "fountain",
+    category: "furniture",
+    width: 23,
+    x: 73,
+    y: 97,
+  },
+  {
+    id: "succulent",
+    name: "하트 다육이",
+    unlock: "flower",
+    category: "plants",
+    width: 19,
+    x: 25,
+    y: 83,
+    bonus: true,
+  },
+  {
+    id: "monstera",
+    name: "초록 몬스테라",
+    unlock: "flower",
+    category: "plants",
+    width: 25,
+    x: 80,
+    y: 90,
+    bonus: true,
+  },
+  {
+    id: "books",
+    name: "파스텔 책 더미",
+    unlock: "flower",
+    category: "stationery",
+    width: 24,
+    x: 70,
+    y: 86,
+    bonus: true,
+  },
+  {
+    id: "journal",
+    name: "감사 일기장",
+    unlock: "flower",
+    category: "stationery",
+    width: 25,
+    x: 45,
+    y: 87,
+    bonus: true,
+  },
+  {
+    id: "teacup",
+    name: "토끼의 찻잔",
+    unlock: "flower",
+    category: "stationery",
+    width: 19,
+    x: 25,
+    y: 92,
+    bonus: true,
+  },
+  {
+    id: "vase",
+    name: "라벤더 꽃병",
+    unlock: "flower",
+    category: "plants",
+    width: 21,
+    x: 75,
+    y: 80,
+    bonus: true,
+  },
+  {
+    id: "bunny-plush",
+    name: "포근한 토끼 인형",
+    unlock: "lantern",
+    category: "friends",
+    width: 23,
+    x: 30,
+    y: 90,
+    bonus: true,
+  },
+  {
+    id: "teddy",
+    name: "하트 곰돌이",
+    unlock: "lantern",
+    category: "friends",
+    width: 23,
+    x: 72,
+    y: 90,
+    bonus: true,
+  },
+  {
+    id: "cat-cushion",
+    name: "낮잠 고양이 쿠션",
+    unlock: "lantern",
+    category: "friends",
+    width: 26,
+    x: 55,
+    y: 94,
+    bonus: true,
+  },
+  {
+    id: "star-cushion",
+    name: "반짝 별 쿠션",
+    unlock: "lantern",
+    category: "friends",
+    width: 23,
+    x: 33,
+    y: 95,
+    bonus: true,
+  },
+  {
+    id: "moon-lamp",
+    name: "구름 달 조명",
+    unlock: "lantern",
+    category: "lights",
+    width: 23,
+    x: 78,
+    y: 76,
+    bonus: true,
+  },
+  {
+    id: "fairy-lights",
+    name: "별빛 가랜드",
+    unlock: "lantern",
+    category: "lights",
+    width: 38,
+    x: 52,
+    y: 63,
+    bonus: true,
+  },
+  {
+    id: "sofa",
+    name: "딸기우유 소파",
+    unlock: "fountain",
+    category: "furniture",
+    width: 40,
+    x: 53,
+    y: 95,
+    bonus: true,
+  },
+  {
+    id: "rug",
+    name: "라벤더 꽃 러그",
+    unlock: "fountain",
+    category: "furniture",
+    width: 43,
+    x: 50,
+    y: 97,
+    bonus: true,
+  },
+  {
+    id: "shelf",
+    name: "작은 크림 책장",
+    unlock: "fountain",
+    category: "furniture",
+    width: 30,
+    x: 76,
+    y: 92,
+    bonus: true,
+  },
+  {
+    id: "table",
+    name: "동그란 티 테이블",
+    unlock: "fountain",
+    category: "furniture",
+    width: 30,
+    x: 50,
+    y: 94,
+    bonus: true,
+  },
+  {
+    id: "chair",
+    name: "토끼 귀 의자",
+    unlock: "fountain",
+    category: "furniture",
+    width: 25,
+    x: 30,
+    y: 95,
+    bonus: true,
+  },
+  {
+    id: "clock",
+    name: "하트 오두막 시계",
+    unlock: "fountain",
+    category: "furniture",
+    width: 21,
+    x: 76,
+    y: 76,
+    bonus: true,
+  },
+];
+export const roomPacks = decorations.map((d) => ({
+  ...d,
+  label:
+    d.id === "flower"
+      ? "꽃밭 세트"
+      : d.id === "lantern"
+        ? "별빛 세트"
+        : "소망 세트",
+  count: roomItems.filter((item) => item.unlock === d.id).length,
+}));
+export function ownsRoomItem(owned: string[], item: RoomItem) {
+  return owned.includes(item.unlock);
+}

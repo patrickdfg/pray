@@ -265,9 +265,13 @@ const assert = require("node:assert/strict");
     () => JSON.parse(localStorage.getItem("pray:demo:profile")).coins,
   );
   await page.getByRole("tab", { name: "내 보관함", exact: true }).click();
-  await page.getByRole("button", { name: "보관하기", exact: true }).click();
+  await page
+    .getByRole("button", { name: "작은 꽃밭 보관하기", exact: true })
+    .click();
   assert.equal(await prop.count(), 0);
-  await page.getByRole("button", { name: "방에 배치", exact: true }).click();
+  await page
+    .getByRole("button", { name: "작은 꽃밭 방에 배치", exact: true })
+    .click();
   assert.equal(await prop.count(), 1);
   await page.getByRole("tab", { name: "방 분위기", exact: true }).click();
   await page.getByRole("button", { name: /분홍 노을/ }).click();

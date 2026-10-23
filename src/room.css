@@ -334,6 +334,144 @@
 .room-shop-link {
   margin-top: 5px;
 }
+.room-prop {
+  max-width: none;
+}
+.room-display {
+  scroll-margin-top: 82px;
+}
+@media (min-width: 1301px) {
+  .room-display {
+    position: sticky;
+    top: 20px;
+  }
+}
+.catalog-intro {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px 12px;
+  margin-bottom: 12px;
+}
+.catalog-intro strong {
+  font-size: 16px;
+  color: #a54a6f;
+}
+.catalog-intro span {
+  font-size: 10px;
+  color: #9e7886;
+}
+.room-pack-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 16px;
+}
+.room-pack-summary span {
+  font-size: 10px;
+  padding: 6px 8px;
+  border: 1px solid #f0d3df;
+  border-radius: 10px;
+  color: #a07389;
+  background: #fff9fa;
+}
+.room-pack-summary .unlocked {
+  color: #69865c;
+  background: #eff6e9;
+  border-color: #dce9d0;
+}
+.room-item-filters {
+  display: flex;
+  overflow-x: auto;
+  gap: 6px;
+  padding: 2px 0 10px;
+  margin-bottom: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: #f1b2cd transparent;
+}
+.room-item-filters button {
+  flex-shrink: 0;
+  min-height: 44px;
+  border: 1px solid #efdae3;
+  border-radius: 13px;
+  padding: 8px 11px;
+  background: #fff9f6;
+  color: #a67e8a;
+  font-size: 11px;
+}
+.room-item-filters button[aria-pressed="true"] {
+  background: #eadcf9;
+  color: #9865aa;
+  border-color: #d9bfe9;
+  font-weight: 700;
+}
+.room-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #fffdfb;
+  border: 1px solid #f0d7df;
+  border-radius: 13px;
+  margin: 6px 0 17px;
+  padding: 0 12px;
+}
+.room-search > span {
+  font-size: 11px;
+  color: #aa8190;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.room-search input {
+  width: 100%;
+  padding: 11px 0;
+  border: 0;
+  background: none;
+  font-size: 16px;
+  min-height: 46px;
+}
+.furniture-card {
+  position: relative;
+}
+.new-prop-badge {
+  position: absolute;
+  top: 9px;
+  left: 9px;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  background: #ffe0eb;
+  color: #ca5c84;
+  border-radius: 7px;
+  padding: 4px 6px;
+  z-index: 1;
+}
+.item-pack-label {
+  display: block;
+  font-size: 10px;
+  color: #ad8c96;
+  margin: -4px 0 12px;
+}
+@media (max-width: 700px) {
+  .room-shop {
+    min-width: 0;
+  }
+  .room-item-filters {
+    max-width: 100%;
+  }
+  .room-item-filters button {
+    font-size: 11px;
+    padding: 8px 10px;
+  }
+  .catalog-intro {
+    gap: 7px;
+  }
+  .catalog-intro span {
+    font-size: 10px;
+  }
+  .furniture-card > button {
+    font-size: 10px;
+  }
+}
 .has-battled .room-background {
   animation: room-glow 0.8s ease;
 }
