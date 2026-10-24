@@ -211,7 +211,7 @@ const assert = require("node:assert/strict");
     .click();
   assert.equal(
     await page.locator('.hero .room-prop img[alt="작은 꽃밭"]').count(),
-    1,
+    0,
   );
   await page.locator(".room-entry-button").click();
   assert.equal(
@@ -222,6 +222,9 @@ const assert = require("node:assert/strict");
       .isDisabled(),
     true,
   );
+  await page
+    .getByRole("button", { name: "작은 꽃밭 방에 배치", exact: true })
+    .click();
   const prop = page.getByRole("button", {
     name: "작은 꽃밭 위치 조정",
     exact: true,
@@ -362,7 +365,7 @@ const assert = require("node:assert/strict");
     viewport: { width: 1440, height: 1080 },
   });
   await preview.goto(demoUrl.toString());
-  await preview.locator(".room-background").waitFor();
+  await preview.locator(".room-scene").waitFor();
   await preview.evaluate(async () => {
     await document.fonts.ready;
     await Promise.all(

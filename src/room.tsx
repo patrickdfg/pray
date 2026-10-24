@@ -18,7 +18,13 @@ import {
 } from "./room-catalog";
 
 type Position = { x: number; y: number; hidden?: boolean };
-export type RoomLayout = { mood: string; positions: Record<string, Position> };
+export type RoomLayout = {
+  mood: string;
+  positions: Record<string, Position>;
+  background?: "plain" | "illustrated";
+};
+type Room = { id: string; name: string; layout: RoomLayout };
+type RoomBook = { version: 2; active: string; rooms: Room[] };
 const defaults = Object.fromEntries(
   roomItems.map((item) => [
     item.id,
@@ -38,49 +44,142 @@ const moods = [
   { id: "sunset", name: "분홍 노을", icon: "🌷" },
   { id: "night", name: "라벤더 밤", icon: "🌙" },
 ];
-const fresh = (): RoomLayout => ({ mood: "morning", positions: {} });
+const fresh = (): RoomLayout => ({
+  mood: "morning",
+  background: "plain",
+  positions: Object.fromEntries(
+    roomItems.map((i) => [i.id, { x: i.x, y: i.y, hidden: true }]),
+  ),
+});
 const clamp = (n: number, low: number, high: number) =>
   Math.min(high, Math.max(low, n));
 export function positionFor(layout: RoomLayout, id: string) {
   return layout.positions[id] || defaults[id] || { x: 50, y: 90 };
 }
-export function useRoomLayout(uid: string) {
-  const readRoom = (owner: string): RoomLayout => {
-    try {
-      const data = JSON.parse(
-        localStorage.getItem(`pray:room:${owner}`) || "null",
-      );
-      if (!data || !moods.some((m) => m.id === data.mood)) return fresh();
-      const positions: Record<string, Position> = {};
-      for (const item of roomItems) {
-        const p = data.positions?.[item.id];
-        if (p && Number.isFinite(p.x) && Number.isFinite(p.y))
-          positions[item.id] = boundedPosition(item.id, {
-            x: p.x,
-            y: p.y,
-            hidden: p.hidden === true,
-          });
-      }
-      return { mood: data.mood, positions };
-    } catch {
-      return fresh();
-    }
+function validLayout(data: any): RoomLayout {
+  if (!data || !moods.some((m) => m.id === data.mood)) return fresh();
+  const positions: Record<string, Position> = {};
+  for (const item of roomItems) {
+    const p = data.positions?.[item.id];
+    if (p && Number.isFinite(p.x) && Number.isFinite(p.y))
+      positions[item.id] = boundedPosition(item.id, {
+        x: p.x,
+        y: p.y,
+        hidden: p.hidden === true,
+      });
+  }
+  return {
+    mood: data.mood,
+    background: data.background === "plain" ? "plain" : "illustrated",
+    positions,
   };
+}
+function readBook(owner: string): RoomBook {
+  try {
+    const saved = JSON.parse(
+      localStorage.getItem("pray:rooms:" + owner) || "null",
+    );
+    if (
+      saved?.version === 2 &&
+      Array.isArray(saved.rooms) &&
+      saved.rooms.length
+    ) {
+      const ids = new Set<string>();
+      const rooms = saved.rooms
+        .filter(
+          (r: any) =>
+            typeof r.id === "string" &&
+            !ids.has(r.id) &&
+            ids.add(r.id) &&
+            typeof r.name === "string",
+        )
+        .map((r: any) => ({
+          id: r.id,
+          name: r.name.slice(0, 30) || "나의 방",
+          layout: validLayout(r.layout),
+        }));
+      if (rooms.length)
+        return {
+          version: 2,
+          active: rooms.some((r: Room) => r.id === saved.active)
+            ? saved.active
+            : rooms[0].id,
+          rooms,
+        };
+    }
+    const old = JSON.parse(
+      localStorage.getItem("pray:room:" + owner) || "null",
+    );
+    return {
+      version: 2,
+      active: "first",
+      rooms: [
+        {
+          id: "first",
+          name: "나의 첫 방",
+          layout: old ? validLayout(old) : fresh(),
+        },
+      ],
+    };
+  } catch {
+    return {
+      version: 2,
+      active: "first",
+      rooms: [{ id: "first", name: "나의 첫 방", layout: fresh() }],
+    };
+  }
+}
+export function useRoomLayout(uid: string) {
   const [state, setState] = useState(() => ({
     owner: uid,
-    layout: readRoom(uid),
+    book: readBook(uid),
   }));
-  const layout = state.owner === uid ? state.layout : readRoom(uid);
+  const book = state.owner === uid ? state.book : readBook(uid);
   useEffect(() => {
-    setState({ owner: uid, layout: readRoom(uid) });
+    setState({ owner: uid, book: readBook(uid) });
   }, [uid]);
-  function update(next: RoomLayout) {
-    setState({ owner: uid, layout: next });
+  const active = book.rooms.find((r) => r.id === book.active) || book.rooms[0];
+  function write(next: RoomBook) {
+    localStorage.setItem("pray:rooms:" + uid, JSON.stringify(next));
+    localStorage.setItem(
+      "pray:room:" + uid,
+      JSON.stringify(next.rooms.find((r) => r.id === next.active)!.layout),
+    );
+    setState({ owner: uid, book: next });
   }
-  function persist() {
-    localStorage.setItem(`pray:room:${uid}`, JSON.stringify(layout));
+  function update(layout: RoomLayout) {
+    write({
+      ...book,
+      rooms: book.rooms.map((r) => (r.id === active.id ? { ...r, layout } : r)),
+    });
   }
-  return { layout, update, persist };
+  return {
+    layout: active.layout,
+    update,
+    persist: () => write(book),
+    rooms: book.rooms,
+    active: active.id,
+    select: (id: string) => {
+      if (book.rooms.some((r) => r.id === id)) write({ ...book, active: id });
+    },
+    add: (name: string) => {
+      const r = {
+        id: crypto.randomUUID(),
+        name: name.trim().slice(0, 30) || "새로운 방",
+        layout: fresh(),
+      };
+      write({ ...book, active: r.id, rooms: [...book.rooms, r] });
+    },
+    rename: (name: string) => {
+      if (!name.trim()) throw Error("방 이름을 적어 주세요.");
+      write({
+        ...book,
+        rooms: book.rooms.map((r) =>
+          r.id === active.id ? { ...r, name: name.trim().slice(0, 30) } : r,
+        ),
+      });
+    },
+  };
 }
 
 export function RoomScene({
@@ -105,25 +204,40 @@ export function RoomScene({
   return (
     <div
       ref={scene}
-      className={`room-scene mood-${layout.mood} ${editable ? "room-editable" : ""}`}
+      className={`room-scene ${layout.background === "plain" ? "room-plain" : ""} mood-${layout.mood} ${editable ? "room-editable" : ""}`}
       aria-label={
         editable
           ? "소품을 옮겨 꾸미는 나의 방"
           : "토끼와 소망이의 포근한 기도 방"
       }
     >
-      <img
-        className="room-background"
-        src={`${import.meta.env.BASE_URL}bunny-prayer-room.webp`}
-        alt="분홍 헤드폰을 쓴 토끼가 소망이와 함께 햇살 드는 방에서 기도 일기를 쓰고 있어요"
-        draggable={false}
-      />
+      {layout.background === "plain" ? (
+        <div className="plain-room" aria-label="소품으로 채워 가는 기본 방">
+          <div className="plain-window" />
+          <div className="plain-floor" />
+          <img
+            className="room-friend"
+            src={`${import.meta.env.BASE_URL}slime.webp`}
+            alt="작은 친구 소망이"
+            draggable={false}
+          />
+        </div>
+      ) : (
+        <img
+          className="room-background"
+          src={`${import.meta.env.BASE_URL}bunny-prayer-room.webp`}
+          alt="분홍 헤드폰을 쓴 토끼가 소망이와 함께 햇살 드는 방에서 기도 일기를 쓰고 있어요"
+          draggable={false}
+        />
+      )}
       <div className="room-atmosphere" aria-hidden="true" />
-      <div className="room-note">
-        지금도
-        <br />
-        충분히 잘하고 있어요!<span>♡</span>
-      </div>
+      {layout.background !== "plain" && (
+        <div className="room-note">
+          지금도
+          <br />
+          충분히 잘하고 있어요!<span>♡</span>
+        </div>
+      )}
       {roomItems
         .filter(
           (d) => ownsRoomItem(owned, d) && !positionFor(layout, d.id).hidden,
@@ -213,7 +327,17 @@ export function RoomStudio({
   persist,
   purchase,
   notify,
+  rooms,
+  active,
+  selectRoom,
+  addRoom,
+  renameRoom,
 }: {
+  rooms: Room[];
+  active: string;
+  selectRoom: (id: string) => void;
+  addRoom: (name: string) => void;
+  renameRoom: (name: string) => void;
   owned: string[];
   coins: number;
   busy: boolean;
@@ -224,6 +348,7 @@ export function RoomStudio({
   purchase: (id: string) => Promise<void>;
   notify: (message: string) => void;
 }) {
+  const [roomName, setRoomName] = useState("");
   const [category, setCategory] = useState("shop");
   const [selected, setSelected] = useState("");
   const [itemFilter, setItemFilter] = useState("all");
@@ -265,10 +390,81 @@ export function RoomStudio({
   }
   return (
     <div className="room-studio">
+      <section className="room-manager panel">
+        <h2>🏠 나의 방들</h2>
+        <p>
+          방마다 다르게 꾸며 보세요. 소품은 모든 방에서 함께 사용하고, 변경한
+          배치는 이 기기에 자동 저장돼요.
+        </p>
+        <label>
+          꾸밀 방
+          <select
+            aria-label="꾸밀 방"
+            value={active}
+            onChange={(e) => {
+              selectRoom(e.target.value);
+              setSelected("");
+              setRoomName("");
+            }}
+          >
+            {rooms.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          방 이름
+          <input
+            maxLength={30}
+            value={roomName}
+            onChange={(e) => setRoomName(e.target.value)}
+            placeholder="예: 기도방, 꽃방"
+          />
+        </label>
+        <div className="room-manager-actions">
+          <button
+            className="primary"
+            disabled={busy}
+            onClick={() => {
+              try {
+                addRoom(roomName);
+                setRoomName("");
+                setSelected("");
+                notify("빈 방을 만들었어요. 보관함에서 소품을 꺼내 보세요 🐰");
+              } catch {
+                notify(
+                  "방을 저장하지 못했어요. 기기 저장 공간을 확인해 주세요.",
+                );
+              }
+            }}
+          >
+            빈 방 추가
+          </button>
+          <button
+            className="secondary"
+            disabled={!roomName.trim()}
+            onClick={() => {
+              try {
+                renameRoom(roomName);
+                setRoomName("");
+                notify("방 이름을 바꿨어요.");
+              } catch {
+                notify("방 이름을 저장하지 못했어요.");
+              }
+            }}
+          >
+            현재 방 이름 바꾸기
+          </button>
+        </div>
+      </section>
       <section className="room-display panel">
         <div className="section-title">
           <div>
-            <h2>🐰 나만의 포근한 방</h2>
+            <h2>
+              🐰 {rooms.find((r) => r.id === active)?.name || "나만의 방"}
+            </h2>
             <p>작은 기도로 모은 선물, 내가 좋아하는 자리에.</p>
           </div>
           <span className="room-balance">
@@ -365,19 +561,40 @@ export function RoomStudio({
           }
         >
           {category === "mood" ? (
-            <div className="mood-options">
-              {moods.map((m) => (
+            <div>
+              <div className="room-background-options">
+                <p>방 바탕</p>
                 <button
-                  key={m.id}
-                  className={layout.mood === m.id ? "selected" : ""}
-                  aria-pressed={layout.mood === m.id}
-                  onClick={() => update({ ...layout, mood: m.id })}
+                  className="secondary"
+                  aria-pressed={layout.background === "plain"}
+                  onClick={() => update({ ...layout, background: "plain" })}
                 >
-                  <span>{m.icon}</span>
-                  {m.name}
-                  <small>무료</small>
+                  심플한 기본 방
                 </button>
-              ))}
+                <button
+                  className="secondary"
+                  aria-pressed={layout.background !== "plain"}
+                  onClick={() =>
+                    update({ ...layout, background: "illustrated" })
+                  }
+                >
+                  토끼의 일러스트 방
+                </button>
+              </div>
+              <div className="mood-options">
+                {moods.map((m) => (
+                  <button
+                    key={m.id}
+                    className={layout.mood === m.id ? "selected" : ""}
+                    aria-pressed={layout.mood === m.id}
+                    onClick={() => update({ ...layout, mood: m.id })}
+                  >
+                    <span>{m.icon}</span>
+                    {m.name}
+                    <small>무료</small>
+                  </button>
+                ))}
+              </div>
             </div>
           ) : (
             <>

@@ -21,6 +21,10 @@ const assert = require("node:assert/strict");
           decorations: ["flower"],
         }),
       );
+      localStorage.setItem(
+        "pray:room:demo",
+        JSON.stringify({ mood: "morning", positions: {} }),
+      );
       localStorage.setItem("room:test-seeded", "1");
     }
   });
@@ -96,6 +100,59 @@ const assert = require("node:assert/strict");
       .count(),
     0,
   );
+  const originalRoom = await page
+    .getByLabel("꾸밀 방", { exact: true })
+    .inputValue();
+  await page.getByLabel("방 이름", { exact: true }).fill("작은 꽃방");
+  await page.getByRole("button", { name: "빈 방 추가", exact: true }).click();
+  assert.equal(await page.locator(".room-display .room-prop").count(), 0);
+  assert.equal(await page.locator(".room-display .plain-room").count(), 1);
+  await page
+    .getByRole("button", { name: "하트 다육이 방에 배치", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "하트 다육이 위치 조정", exact: true })
+    .press("ArrowRight");
+  const newRoom = await page
+    .getByLabel("꾸밀 방", { exact: true })
+    .inputValue();
+  await page.getByLabel("꾸밀 방", { exact: true }).selectOption(originalRoom);
+  assert.equal(
+    await page
+      .getByRole("button", { name: "하트 곰돌이 위치 조정", exact: true })
+      .count(),
+    1,
+  );
+  await page.getByLabel("꾸밀 방", { exact: true }).selectOption(newRoom);
+  assert.equal(
+    await page
+      .getByRole("button", { name: "하트 곰돌이 위치 조정", exact: true })
+      .count(),
+    0,
+  );
+  await page.reload();
+  await page.locator(".room-entry-button").click();
+  assert.equal(
+    await page.getByLabel("꾸밀 방", { exact: true }).inputValue(),
+    newRoom,
+  );
+  assert.equal(
+    await page
+      .getByRole("button", { name: "하트 다육이 위치 조정", exact: true })
+      .count(),
+    1,
+  );
+  await page.getByLabel("방 이름", { exact: true }).fill("나의 꽃 정원");
+  await page
+    .getByRole("button", { name: "현재 방 이름 바꾸기", exact: true })
+    .click();
+  assert.equal(
+    await page
+      .locator('select[aria-label="꾸밀 방"] option:checked')
+      .textContent(),
+    "나의 꽃 정원",
+  );
+  await page.getByLabel("꾸밀 방", { exact: true }).selectOption(originalRoom);
   await page.getByRole("button", { name: "🧸 인형·쿠션", exact: true }).click();
   assert.equal(await page.locator(".furniture-card").count(), 4);
   await page
@@ -168,7 +225,9 @@ const assert = require("node:assert/strict");
   await page.getByRole("button", { name: "🧸 인형·쿠션", exact: true }).click();
   await page.getByRole("status").waitFor({ state: "hidden" });
   // Isolated catalog previews omit fixed page chrome so it does not cover cards.
-  await page.addStyleTag({ content: 'header, .bottom-nav { visibility: hidden !important; }' });
+  await page.addStyleTag({
+    content: "header, .bottom-nav { visibility: hidden !important; }",
+  });
   await page
     .locator(".room-shop")
     .screenshot({ path: "test-results/more-props-mobile.png" });

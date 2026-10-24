@@ -1207,6 +1207,11 @@ function App() {
                   connected={connected}
                   layout={room.layout}
                   update={room.update}
+                  rooms={room.rooms}
+                  active={room.active}
+                  selectRoom={room.select}
+                  addRoom={room.add}
+                  renameRoom={room.rename}
                   persist={room.persist}
                   purchase={purchase}
                   notify={notify}
