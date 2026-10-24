@@ -56,7 +56,7 @@ const ts = require("typescript");
   }
   try {
     await env.clearFirestore();
-    await test("Google authentication required", async () => {
+    await test("Authentication required; permanent email and guest identities supported", async () => {
       await assertFails(
         createSparkCommand(
           env.unauthenticatedContext().firestore(),
@@ -64,7 +64,7 @@ const ts = require("typescript");
           "x",
         )("bootstrap"),
       );
-      await assertFails(
+      await assertSucceeds(
         createSparkCommand(
           db("password", "password"),
           "password",

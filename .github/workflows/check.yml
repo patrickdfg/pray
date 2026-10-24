@@ -28,6 +28,8 @@ jobs:
           distribution: temurin
           java-version: 21
       - run: npm run test:rules
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:community
       - uses: actions/upload-pages-artifact@v3
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         with:

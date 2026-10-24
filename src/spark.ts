@@ -57,7 +57,10 @@ export function createSparkCommand(
             dailyDay: 0,
             dailyCount: 0,
             lastEvent: null,
+            accountKind: data.accountKind || "permanent",
           });
+        else if (data.accountKind)
+          tx.update(profileRef, { accountKind: data.accountKind });
         return { ok: true };
       });
     if (action === "createTeam") {

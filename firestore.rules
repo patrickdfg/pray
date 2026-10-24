@@ -1,7 +1,8 @@
 rules_version = '2';
 service cloud.firestore {
  match /databases/{database}/documents {
-  function signed() { return request.auth != null && request.auth.token.firebase.sign_in_provider == 'google.com'; }
+  function signed() { return request.auth != null && request.auth.token.firebase.sign_in_provider in ['google.com','anonymous','password']; }
+  function permanent() { return signed() && request.auth.token.firebase.sign_in_provider in ['google.com','password']; }
   function me() { return request.auth.uid; }
   function profile() { return get(/databases/$(database)/documents/profiles/$(me())).data; }
   function member(team) { return signed() && exists(/databases/$(database)/documents/teams/$(team)/members/$(me())); }
@@ -35,7 +36,8 @@ service cloud.firestore {
   match /profiles/{uid} {
    allow get: if signed() && uid == me();
    allow create: if signed() && uid == me()
-    && request.resource.data.keys().hasOnly(['uid','name','xp','coins','decorations','activeTeam','createdAt','dailyDay','dailyCount','lastEvent'])
+    && request.resource.data.keys().hasOnly(['uid','name','xp','coins','decorations','activeTeam','createdAt','dailyDay','dailyCount','lastEvent','accountKind'])
+    && request.resource.data.get('accountKind','permanent') == (permanent() ? 'permanent' : 'guest')
     && request.resource.data.uid == uid && request.resource.data.name is string && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 80
     && request.resource.data.xp == 0 && request.resource.data.coins == 0 && request.resource.data.decorations == [] && request.resource.data.activeTeam == ''
     && request.resource.data.createdAt == request.time && request.resource.data.dailyDay == 0 && request.resource.data.dailyCount == 0 && request.resource.data.lastEvent == null;
@@ -43,11 +45,18 @@ service cloud.firestore {
     (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['activeTeam']) && resource.data.activeTeam == '' && validKey(request.resource.data.activeTeam)
      && getAfter(/databases/$(database)/documents/teams/$(request.resource.data.activeTeam)/members/$(uid)).data.uid == uid
      && !exists(/databases/$(database)/documents/teams/$(request.resource.data.activeTeam)/members/$(uid)))
-    || rewardUpdate() || purchaseUpdate());
+    || purchaseUpdate()
+    || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name']) && request.resource.data.name is string && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 80)
+    || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['accountKind']) && request.resource.data.accountKind == (permanent() ? 'permanent' : 'guest'))
+    || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['activeCircle']) && resource.data.get('activeCircle','') == '' && validKey(request.resource.data.activeCircle)
+     && (getAfter(/databases/$(database)/documents/circles/$(request.resource.data.activeCircle)).data.director == me()
+       || getAfter(/databases/$(database)/documents/circles/$(request.resource.data.activeCircle)/requests/$(me())).data.uid == me()))
+    || (request.resource.data.lastEvent is map && 'team' in request.resource.data.lastEvent && rewardUpdate())
+    || (request.resource.data.lastEvent is map && 'circle' in request.resource.data.lastEvent && circleRewardUpdate()));
   }
   match /teams/{team} {
    allow get: if member(team);
-   allow create: if signed() && validKey(team)
+   allow create: if permanent() && validKey(team)
     && request.resource.data.keys().hasOnly(['name','leader','createdAt','memberCount','itemCount','lastMember','lastItem'])
     && request.resource.data.name is string && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 40
     && request.resource.data.leader == me() && request.resource.data.createdAt == request.time
@@ -158,6 +167,132 @@ service cloud.firestore {
     && getAfter(/databases/$(database)/documents/teams/$(resource.data.team)/members/$(me())).data.inviteToken == token
     && getAfter(/databases/$(database)/documents/teams/$(resource.data.team)/members/$(me())).data.joinedAt == request.time;
   }
+  function circleData(id) { return get(/databases/$(database)/documents/circles/$(id)).data; }
+  function circleMember(id) { return signed() && me() in circleData(id).people; }
+  function circleManager(id,team) { let c=circleData(id); return permanent() && (c.director == me() || c.teams[team].leader == me()); }
+  function circleCanRead(id,team) { let c=circleData(id); return circleMember(id) && (c.director == me() || team == 'all' || team == c.people[me()].team); }
+  function circleEvent(id,item,event,kind) {
+   let path=/databases/$(database)/documents/circles/$(id)/entries/$(item)/events/$(event);
+   return validKey(event) && !exists(path) && getAfter(path).data == {'uid':me(),'kind':kind,'at':request.time};
+  }
+  function circleRewardUpdate() {
+   let p=request.resource.data; let r=p.lastEvent;
+   let path=/databases/$(database)/documents/circles/$(r.circle)/entries/$(r.item)/events/$(r.event);
+   let e=getAfter(path).data; let day=int((request.time.toMillis() + 32400000) / 86400000);
+   return p.diff(resource.data).affectedKeys().hasOnly(['xp','coins','lastEvent','dailyDay','dailyCount'])
+    && r.keys().hasOnly(['circle','item','event']) && validKey(r.circle) && validKey(r.item) && validKey(r.event)
+    && !exists(path) && e.uid == me() && e.at == request.time && e.kind in ['log','complete']
+    && p.xp == resource.data.xp + (e.kind == 'log' ? 10 : 20) && p.coins == resource.data.coins + (e.kind == 'log' ? 2 : 5)
+    && p.dailyDay == day && p.dailyCount == (resource.data.dailyDay == day ? resource.data.dailyCount+1 : 1) && p.dailyCount <= 200;
+  }
+  match /circleGates/{proof} {
+   // Admission secrets are non-listable, derived using PBKDF2; plaintext is never stored.
+   allow get: if signed();
+   allow create,update: if signed() && proof.matches('^[a-f0-9]{64}$')
+    && request.resource.data.keys().hasOnly(['circle','team','code'])
+    && validKey(request.resource.data.circle) && validKey(request.resource.data.team)
+    && request.resource.data.code.matches('^[A-Z0-9]{8,16}$')
+    && circleManager(request.resource.data.circle,request.resource.data.team)
+    && getAfter(/databases/$(database)/documents/circles/$(request.resource.data.circle)).data.teams[request.resource.data.team].gate == proof
+    && (resource == null || request.resource.data == resource.data);
+   allow delete: if circleManager(resource.data.circle,resource.data.team)
+    && getAfter(/databases/$(database)/documents/circles/$(resource.data.circle)).data.teams[resource.data.team].gate != proof;
+  }
+  match /circles/{circle} {
+   allow get: if signed() && me() in resource.data.people;
+   allow create: if permanent() && request.resource.data.keys().hasOnly(['name','director','createdAt','people','teams','entryCount','lastEntry','lastJoined','lastTeam'])
+    && request.resource.data.name is string && request.resource.data.name.size()>0 && request.resource.data.name.size()<=40
+    && request.resource.data.director == me() && request.resource.data.createdAt == request.time
+    && request.resource.data.people.keys() == [me()] && request.resource.data.teams.size() == 1
+    && validTeam(request.resource.data.teams[request.resource.data.people[me()].team],me())
+    && request.resource.data.people[me()] == {'name':profile().name,'team':request.resource.data.people[me()].team,'role':'director'}
+    && request.resource.data.entryCount == 0 && request.resource.data.lastEntry == ''
+    && profile().get('activeCircle','') == '' && getAfter(/databases/$(database)/documents/profiles/$(me())).data.activeCircle == circle;
+   function validTeam(t,leader) { return t.keys().hasOnly(['name','leader','code','gate','open','approval']) && t.name is string && t.name.size()>0 && t.name.size()<=40 && t.leader == leader && t.code == '' && t.gate == '' && t.open == false && t.approval == false; }
+   allow update: if signed() && (admission() || teamManagement() || newEntry());
+   function admission() {
+    let p=request.resource.data; let changed=p.people.diff(resource.data.people).affectedKeys(); let u=p.lastJoined;
+    let r=getAfter(/databases/$(database)/documents/circles/$(circle)/requests/$(u)).data;
+    let oldRequest=get(/databases/$(database)/documents/circles/$(circle)/requests/$(u)).data;
+    let t=resource.data.teams[r.team];
+    return p.diff(resource.data).affectedKeys().hasOnly(['people','lastJoined']) && changed.hasOnly([u]) && changed.size() == 1 && !(u in resource.data.people) && p.people.size() <= 100
+     && oldRequest.status == 'pending' && r.status == 'accepted'
+     && p.people[u] == {'name':r.name,'team':r.team,'role':'member'}
+     && ((u == me() && t.open && !t.approval && t.gate == r.proof) || circleManager(circle,r.team));
+   }
+   function teamManagement() {
+    let p=request.resource.data; let changed=p.teams.diff(resource.data.teams).affectedKeys(); let t=p.lastTeam; let v=p.teams[t];
+    return permanent() && p.diff(resource.data).affectedKeys().hasOnly(['teams','people','lastTeam']) && changed.hasOnly([t]) && changed.size() == 1 && p.teams.size() <= 20
+     && ((resource.data.director == me() && !(t in resource.data.teams) && validTeam(v,me()) && p.people == resource.data.people)
+      || (t in resource.data.teams && circleManager(circle,t) && v.name == resource.data.teams[t].name && v.keys().hasOnly(['name','leader','code','gate','open','approval'])
+       && ((v.leader == resource.data.teams[t].leader && p.people == resource.data.people && v.open is bool && v.approval is bool
+         && v.code.matches('^[A-Z0-9]{8,16}$') && v.gate.matches('^[a-f0-9]{64}$')
+         && getAfter(/databases/$(database)/documents/circleGates/$(v.gate)).data == {'circle':circle,'team':t,'code':v.code})
+        || (resource.data.director == me() && v.diff(resource.data.teams[t]).affectedKeys().hasOnly(['leader']) && promotion(p,v,t)))));
+   }
+   function promotion(p,v,t) {
+    let old=resource.data.teams[t].leader; let next=v.leader;
+    return next != resource.data.director && next in resource.data.people && resource.data.people[next].team == t
+     && get(/databases/$(database)/documents/profiles/$(next)).data.get('accountKind','permanent') == 'permanent'
+     && p.people.diff(resource.data.people).affectedKeys().hasOnly([old,next])
+     && p.people[next] == {'name':resource.data.people[next].name,'team':t,'role':'leader'}
+     && (old == resource.data.director ? p.people[old] == resource.data.people[old] : p.people[old] == {'name':resource.data.people[old].name,'team':t,'role':'member'});
+   }
+   function newEntry() { let p=request.resource.data; return circleMember(circle) && p.diff(resource.data).affectedKeys().hasOnly(['entryCount','lastEntry'])
+    && p.entryCount == resource.data.entryCount+1 && p.entryCount<=100 && validKey(p.lastEntry)
+    && !exists(/databases/$(database)/documents/circles/$(circle)/entries/$(p.lastEntry))
+    && getAfter(/databases/$(database)/documents/circles/$(circle)/entries/$(p.lastEntry)).data.author == me(); }
+   match /requests/{uid} {
+    allow get: if signed() && (uid == me() || circleManager(circle,resource.data.team));
+    allow list: if circleMember(circle) && request.query.limit<=100 && (circleData(circle).director == me() || circleManager(circle,resource.data.team));
+    allow create: if signed() && uid == me() && request.resource.data.keys().hasOnly(['uid','name','team','proof','createdAt','status'])
+     && request.resource.data.uid == me() && request.resource.data.name is string && request.resource.data.name.size()>0 && request.resource.data.name.size()<=40
+     && request.resource.data.status == 'pending' && request.resource.data.createdAt == request.time
+     && request.resource.data.proof.matches('^[a-f0-9]{64}$')
+     && circleData(circle).teams[request.resource.data.team].open
+     && circleData(circle).teams[request.resource.data.team].gate == request.resource.data.proof
+     && get(/databases/$(database)/documents/circleGates/$(request.resource.data.proof)).data == {'circle':circle,'team':request.resource.data.team,'code':circleData(circle).teams[request.resource.data.team].code}
+     && profile().get('activeCircle','') in ['',circle];
+    allow update: if signed() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) && resource.data.status == 'pending' && request.resource.data.status == 'accepted'
+     && getAfter(/databases/$(database)/documents/circles/$(circle)).data.people[uid] == {'name':resource.data.name,'team':resource.data.team,'role':'member'};
+   }
+   match /entries/{item} {
+    allow get: if circleCanRead(circle,resource.data.teamId);
+    allow list: if request.query.limit<=100 && circleCanRead(circle,resource.data.teamId);
+    allow create: if circleMember(circle) && request.resource.data.keys().hasOnly(['title','body','kind','author','authorName','teamId','createdAt','count','counts','lastTimes','comments','outcomes','source','closed'])
+     && validContent(request.resource.data) && request.resource.data.author == me() && request.resource.data.authorName == circleData(circle).people[me()].name
+     && (request.resource.data.teamId == circleData(circle).people[me()].team || (circleData(circle).director == me() && (request.resource.data.teamId == 'all' || request.resource.data.teamId in circleData(circle).teams)))
+     && request.resource.data.createdAt == request.time && request.resource.data.count == 0 && request.resource.data.counts == {} && request.resource.data.lastTimes == {} && request.resource.data.comments == [] && request.resource.data.outcomes == {} && request.resource.data.closed == false
+     && request.resource.data.source == (circleData(circle).director == me() ? '단장이 나눴어요' : circleData(circle).people[me()].role == 'leader' ? '팀장이 나눴어요' : '팀원이 나눴어요')
+     && getAfter(/databases/$(database)/documents/circles/$(circle)).data.lastEntry == item && getAfter(/databases/$(database)/documents/circles/$(circle)).data.entryCount == circleData(circle).entryCount+1;
+    function validContent(v) { return v.title is string && v.title.matches('.*[^\\s].*') && v.title.size()<=100 && v.body is string && v.body.size()<=3000 && v.kind in ['prayer','task']; }
+    allow update: if circleCanRead(circle,resource.data.teamId) && (edit() || record() || completion() || comment() || close());
+    function edit() {return resource.data.author == me() && !resource.data.closed && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title','body']) && validContent(request.resource.data);}
+    function record() {let p=request.resource.data; return !resource.data.closed && resource.data.outcomes.get(me(),null) == null
+     && p.diff(resource.data).affectedKeys().hasOnly(['count','counts','lastTimes','eventId','lastActor']) && p.lastActor == me()
+     && p.count == resource.data.count+1 && p.counts.diff(resource.data.counts).affectedKeys().hasOnly([me()]) && p.counts[me()] == resource.data.counts.get(me(),0)+1
+     && p.lastTimes.diff(resource.data.lastTimes).affectedKeys().hasOnly([me()]) && p.lastTimes[me()] == request.time
+     && (resource.data.lastTimes.get(me(),null) == null || request.time >= resource.data.lastTimes[me()] + duration.value(3,'s'))
+     && circleEvent(circle,item,p.eventId,'log');}
+    function completion() {let p=request.resource.data;let o=p.outcomes[me()];return !resource.data.closed && resource.data.outcomes.get(me(),null) == null
+     && p.diff(resource.data).affectedKeys().hasOnly(['outcomes','eventId','lastActor']) && p.lastActor == me() && p.outcomes.diff(resource.data.outcomes).affectedKeys().hasOnly([me()])
+     && o.keys().hasOnly(['rating','count','completedAt']) && o.rating is int && o.rating>=1 && o.rating<=5 && o.completedAt == request.time && o.count == resource.data.counts.get(me(),0)
+     && circleEvent(circle,item,p.eventId,'complete');}
+    function comment() {let p=request.resource.data;let c=p.comments[resource.data.comments.size()];return p.diff(resource.data).affectedKeys().hasOnly(['comments']) && resource.data.comments.size()<100
+     && p.comments == resource.data.comments.concat([c]) && p.comments.size() == resource.data.comments.size()+1
+     && c.keys().hasOnly(['id','uid','name','text','at']) && validKey(c.id) && c.uid == me() && c.name == circleData(circle).people[me()].name
+     && c.text is string && c.text.size()>0 && c.text.size()<=1000 && c.at is timestamp && c.at>=request.time-duration.value(1,'m') && c.at<=request.time+duration.value(1,'m');}
+    function close() {let p=request.resource.data;return !resource.data.closed && (resource.data.author == me() || circleManager(circle,resource.data.teamId))
+     && p.diff(resource.data).affectedKeys().hasOnly(['closed','result','closedAt']) && p.closed == true && p.result is int && p.result>=1 && p.result<=5 && p.closedAt == request.time;}
+    match /events/{event} {
+     allow get: if circleMember(circle) && (resource == null || resource.data.uid == me());
+     allow create: if circleMember(circle) && request.resource.data.keys().hasOnly(['uid','kind','at']) && request.resource.data.uid == me() && request.resource.data.at == request.time && request.resource.data.kind in ['log','complete']
+      && getAfter(/databases/$(database)/documents/profiles/$(me())).data.lastEvent == {'circle':circle,'item':item,'event':event}
+      && getAfter(/databases/$(database)/documents/circles/$(circle)/entries/$(item)).data.eventId == event && getAfter(/databases/$(database)/documents/circles/$(circle)/entries/$(item)).data.lastActor == me();
+    }
+   }
+  }
+
   match /{document=**} { allow read,write: if false; }
  }
 }

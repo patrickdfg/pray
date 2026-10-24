@@ -43,6 +43,9 @@ import {
 } from "./domain";
 import {
   connected,
+  db,
+  sessionUser,
+  guestLogin,
   login,
   logout,
   watchAuth,
@@ -55,6 +58,9 @@ import "./quest.css";
 import "./garden.css";
 import { RoomScene, RoomStudio, useRoomLayout } from "./room";
 import "./room.css";
+import { CirclePanel, AccountOptions, useCircle } from "./community";
+import { circleCommands, watchCircleEntries } from "./circles";
+import "./community.css";
 const uid = () => crypto.randomUUID();
 const escError = (e: unknown) => {
   const messages: Record<string, string> = {
@@ -62,7 +68,13 @@ const escError = (e: unknown) => {
     "auth/popup-blocked": "팝업을 허용한 뒤 Google 로그인을 다시 눌러 주세요.",
     "auth/unauthorized-domain":
       "현재 주소의 Google 로그인 연결을 확인하고 있어요.",
-    "auth/operation-not-allowed": "Google 로그인 제공자 설정이 필요해요.",
+    "auth/operation-not-allowed":
+      "이 로그인 방법의 서버 설정을 적용 중이에요. 잠시 후 다시 시도해 주세요.",
+    "auth/credential-already-in-use":
+      "이미 다른 계정에 연결된 로그인입니다. 현재 별명 기록은 유지돼요. 새 이메일을 연결하거나 기존 계정으로 별도 로그인해 주세요.",
+    "auth/invalid-credential": "이메일과 계정 비밀번호를 확인해 주세요.",
+    "auth/email-already-in-use":
+      "이미 가입한 이메일이에요. 새 계정 만들기를 해제하고 로그인해 주세요.",
     "auth/network-request-failed":
       "연결을 확인하고 Google 로그인을 다시 시도해 주세요.",
     "resource-exhausted":
@@ -90,6 +102,14 @@ function App() {
     xp: connected ? 0 : 120,
     coins: connected ? 0 : 40,
   });
+  const [legacyView, setLegacyView] = useState(false);
+  const { circle, pending: circlePending } = useCircle(
+    profile.uid,
+    profile.activeCircle,
+  );
+  const useCommunity = !!circle && !legacyView;
+  const [shareTeam, setShareTeam] = useState("");
+  const [anonymous, setAnonymous] = useState(false);
   const [battle, setBattle] = useState(0);
   const room = useRoomLayout(profile.uid);
   // Each prayer/task owns its own click state; other entries stay interactive.
@@ -146,6 +166,7 @@ function App() {
     () =>
       watchAuth(async (user) => {
         setSigned(!!user);
+        setAnonymous(!!user?.isAnonymous);
         setLoaded(true);
         setSecrets([]);
         setSelected(null);
@@ -178,6 +199,7 @@ function App() {
       (p) => {
         if (p) {
           setProfile(p);
+          setAnonymous(p.accountKind === "guest");
           setTeam(p.activeTeam || "");
         }
       },
@@ -185,7 +207,7 @@ function App() {
     );
   }, [signed, profile.uid]);
   useEffect(() => {
-    if (!signed || !team) return;
+    if (!signed || !team || useCommunity) return;
     const stops = [
       watchDoc(
         `teams/${team}`,
@@ -217,7 +239,68 @@ function App() {
       ),
     ];
     return () => stops.forEach((s) => s());
-  }, [signed, team, profile.uid]);
+  }, [signed, team, profile.uid, useCommunity]);
+  useEffect(() => {
+    if (!useCommunity || !circle || !db) return;
+    setItems([]);
+    setTeamName(
+      circle.teams[circle.people[profile.uid]?.team]?.name || circle.name,
+    );
+    return watchCircleEntries(
+      db,
+      circle,
+      profile.uid,
+      (values) =>
+        setItems(
+          values.map((e) => {
+            const o = e.outcomes?.[profile.uid];
+            return {
+              ...e,
+              circleId: circle.id,
+              secret: false,
+              totalCount: e.count,
+              personalCompleted: !!o,
+              lastLog: e.lastTimes?.[profile.uid],
+              myCount: e.counts?.[profile.uid] || 0,
+              ...(o
+                ? {
+                    rating: o.rating,
+                    completedAt: o.completedAt,
+                    count: o.count,
+                  }
+                : {}),
+              ...(e.closed && !o
+                ? {
+                    rating: e.result,
+                    completedAt: e.closedAt,
+                    count: e.counts?.[profile.uid] || 0,
+                  }
+                : {}),
+            };
+          }),
+        ),
+      (e) => notify(escError(e)),
+    );
+  }, [
+    useCommunity,
+    circle?.id,
+    circle?.people[profile.uid]?.team,
+    circle?.people[profile.uid]?.role,
+    profile.uid,
+  ]);
+  async function sharedCommand(action: string, payload: Record<string, any>) {
+    if (useCommunity && circle && db)
+      return circleCommands(db, profile.uid)(
+        action === "createItem" ? "createEntry" : action,
+        {
+          circle: circle.id,
+          name: circle.people[profile.uid]?.name || profile.name,
+          teamId: shareTeam || circle.people[profile.uid]?.team,
+          ...payload,
+        },
+      );
+    return command(action, payload);
+  }
   useEffect(() => {
     setSecrets(read(`pray:secrets:${profile.uid}`, []));
     if (!connected)
@@ -274,16 +357,30 @@ function App() {
     });
   }
   const all = [...items, ...secrets],
-    summary = stats(all),
+    statisticItems = all.filter((e) => !e.circleId || e.personalCompleted),
+    summary = stats(statisticItems),
     active = all.filter((e) => e.rating == null),
     current = all.find((e) => e.id === selected);
-  const myMembers = connected
-    ? members
-    : [
-        { uid: "leader", name: "은혜", role: "leader" },
-        { uid: "demo", name: "하은", parentUid: "leader", role: "member" },
-        { uid: "friend", name: "지우", parentUid: "leader", role: "member" },
-      ];
+  const myMembers =
+    useCommunity && circle
+      ? Object.entries(circle.people).map(([uid, p]) => ({
+          uid,
+          name: p.name,
+          role: p.role,
+          parentUid: circle.teams[p.team]?.leader,
+        }))
+      : connected
+        ? members
+        : [
+            { uid: "leader", name: "은혜", role: "leader" },
+            { uid: "demo", name: "하은", parentUid: "leader", role: "member" },
+            {
+              uid: "friend",
+              name: "지우",
+              parentUid: "leader",
+              role: "member",
+            },
+          ];
   const today = new Date().toLocaleDateString("ko-KR", {
     month: "long",
     day: "numeric",
@@ -339,9 +436,9 @@ function App() {
       };
       if (draft.secret) storeSecrets([...secrets, entry]);
       else if (connected) {
-        if (!signed || !team)
+        if (!signed || (!team && !useCommunity))
           throw Error("Google 로그인 후 팀을 만들거나 초대에 참여해 주세요.");
-        await command("createItem", { team, ...draft });
+        await sharedCommand("createItem", { team, ...draft });
       } else storeItems([...items, entry]);
       setModal(null);
       setDraft({ title: "", body: "", kind: "prayer", secret: false });
@@ -359,7 +456,7 @@ function App() {
       if (e.secret)
         storeSecrets(secrets.map((x) => (x.id === e.id ? logEntry(x) : x)));
       else if (connected)
-        await command("log", { team, id: e.id, eventId: uid() });
+        await sharedCommand("log", { team, id: e.id, eventId: uid() });
       else {
         storeItems(items.map((x) => (x.id === e.id ? logEntry(x) : x)));
         reward(10, 2);
@@ -385,7 +482,8 @@ function App() {
         storeSecrets(
           secrets.map((x) => (x.id === e.id ? finishEntry(x, rating) : x)),
         );
-      else if (connected) await command("complete", { team, id: e.id, rating });
+      else if (connected)
+        await sharedCommand("complete", { team, id: e.id, rating });
       else {
         storeItems(
           items.map((x) => (x.id === e.id ? finishEntry(x, rating) : x)),
@@ -414,7 +512,12 @@ function App() {
       if (current.secret) storeSecrets(update(secrets));
       else if (connected) {
         try {
-          await command("editItem", { team, id: current.id, title, body });
+          await sharedCommand("editItem", {
+            team,
+            id: current.id,
+            title,
+            body,
+          });
         } catch (error) {
           if ((error as { code?: string }).code === "permission-denied")
             throw Error(
@@ -445,7 +548,7 @@ function App() {
           ),
         );
       else if (connected)
-        await command("comment", { team, id: current.id, text: comment });
+        await sharedCommand("comment", { team, id: current.id, text: comment });
       else
         storeItems(
           items.map((x) =>
@@ -480,6 +583,13 @@ function App() {
     });
   }
   async function makeInvite() {
+    if (useCommunity) {
+      setTab("team");
+      notify(
+        "우리 팀의 입장 관리에서 팀 코드와 참여 비밀번호를 설정해 주세요.",
+      );
+      return;
+    }
     if (connected && (!signed || !team)) {
       notify("Google로 로그인하고 팀을 먼저 만들어 주세요.");
       return;
@@ -577,7 +687,9 @@ function App() {
               <strong>{profile.name}님</strong>
               <small>
                 {signed
-                  ? "Google 계정으로 함께해요"
+                  ? anonymous
+                    ? "별명 계정 · 이 기기에 로그인 유지"
+                    : "계정 로그인 유지 중"
                   : connected
                     ? "Google로 가입·로그인"
                     : "기기에 저장되는 체험 모드"}
@@ -588,6 +700,13 @@ function App() {
                 aria-label="로그아웃"
                 onClick={() =>
                   run(async () => {
+                    if (
+                      anonymous &&
+                      !window.confirm(
+                        "별명 계정에서 로그아웃하면 이 기기의 기록에 다시 접근하지 못할 수 있어요. 먼저 Google·이메일 연결을 권장해요. 로그아웃할까요?",
+                      )
+                    )
+                      return;
                     await logout();
                   })
                 }
@@ -665,6 +784,35 @@ function App() {
           </div>
         </header>
         <div className="content">
+          {connected && !signed && (
+            <div className="invite-banner">
+              <div>
+                <strong>혼자 기도하고 실천해도 좋아요</strong>
+                <p>
+                  별명으로 시작하면 이 휴대폰에서 이어 쓸 수 있어요. 개인 기록은
+                  비밀 글로 기기에 보관해요.
+                </p>
+              </div>
+              <button
+                className="secondary"
+                disabled={busy || !loaded}
+                onClick={() =>
+                  run(async () => {
+                    await guestLogin("숲 친구");
+                    setDraft({
+                      title: "",
+                      body: "",
+                      kind: "prayer",
+                      secret: true,
+                    });
+                    setModal("new");
+                  })
+                }
+              >
+                혼자 시작하기
+              </button>
+            </div>
+          )}
           {inviteToken && (
             <div className="invite-banner">
               <div>
@@ -688,7 +836,7 @@ function App() {
             <div className="invite-banner">
               <div>
                 <strong>나의 기도숲을 시작해 보세요</strong>
-                <p>Google로 로그인하고 팀을 만들거나 초대 링크로 참여해요.</p>
+                <p>팀 코드를 받았다면 Google 없이 별명으로 참여할 수 있어요.</p>
               </div>
               <button
                 className="primary"
@@ -703,7 +851,7 @@ function App() {
               </button>
             </div>
           )}
-          {connected && signed && !team && (
+          {connected && signed && !team && !profile.activeCircle && (
             <div className="invite-banner">
               <div>
                 <strong>첫 번째 숲을 만들어 주세요</strong>
@@ -712,6 +860,38 @@ function App() {
               <button className="primary" onClick={() => setModal("team")}>
                 팀 만들기
               </button>
+            </div>
+          )}
+          {connected &&
+            tab !== "team" &&
+            (!signed || (!team && !profile.activeCircle) || circlePending) && (
+              <CirclePanel
+                circle={circle}
+                pending={circlePending}
+                uid={profile.uid}
+                notify={notify}
+                run={run}
+                busy={busy}
+                entries={items}
+              />
+            )}
+          {connected && profile.activeCircle && (
+            <div className="circle-switch">
+              <strong>
+                {circle?.name ||
+                  (circlePending ? "참여 승인 대기 중" : "기도단 연결 중…")}
+              </strong>
+              {team && (
+                <button
+                  className="secondary"
+                  onClick={() => {
+                    setLegacyView(!legacyView);
+                    setItems([]);
+                  }}
+                >
+                  {legacyView ? "기도단 기록 보기" : "기존 팀 기록 보기"}
+                </button>
+              )}
             </div>
           )}
           <div className="page-heading">
@@ -818,7 +998,7 @@ function App() {
                 <Metric
                   icon={<Heart />}
                   label="함께 모은 기도"
-                  value={`${all.filter((e) => e.kind === "prayer").reduce((n, e) => n + e.count, 0)}번`}
+                  value={`${all.filter((e) => e.kind === "prayer").reduce((n, e) => n + (e.totalCount ?? e.count), 0)}번`}
                   note="한 번의 기도에도 마음을 담아"
                   color="pink"
                 />
@@ -937,8 +1117,14 @@ function App() {
                             <strong>{e.title}</strong>
                             <span className="entry-foot">
                               {e.kind === "prayer" ? "함께 기도" : "실천 기록"}{" "}
-                              {e.count}번 <span>·</span> 감동{" "}
-                              {e.comments.length} <ChevronRight size={12} />
+                              {e.totalCount ?? e.count}번{" "}
+                              {e.circleId && (
+                                <span className="personal-count">
+                                  · 나는 {e.myCount}번
+                                </span>
+                              )}{" "}
+                              <span>·</span> 감동 {e.comments.length}{" "}
+                              <ChevronRight size={12} />
                             </span>
                           </button>
                           {e.author === profile.uid && e.rating == null && (
@@ -1026,24 +1212,24 @@ function App() {
                       icon={<Heart />}
                       label="5단계 기도 평균"
                       value={
-                        stats(all.filter((e) => e.kind === "prayer")).average ==
-                        null
+                        stats(statisticItems.filter((e) => e.kind === "prayer"))
+                          .average == null
                           ? "아직 없어요"
-                          : `${stats(all.filter((e) => e.kind === "prayer")).average}번`
+                          : `${stats(statisticItems.filter((e) => e.kind === "prayer")).average}번`
                       }
-                      note="5단계로 마친 기도의 누적 기도 횟수 평균"
+                      note="내가 5단계로 마친 기도의 개인 횟수 평균"
                       color="pink"
                     />
                     <Metric
                       icon={<Check />}
                       label="5단계 실천 평균"
                       value={
-                        stats(all.filter((e) => e.kind === "task")).average ==
-                        null
+                        stats(statisticItems.filter((e) => e.kind === "task"))
+                          .average == null
                           ? "아직 없어요"
-                          : `${stats(all.filter((e) => e.kind === "task")).average}번`
+                          : `${stats(statisticItems.filter((e) => e.kind === "task")).average}번`
                       }
-                      note="5단계로 마친 할 일의 누적 실천 횟수 평균"
+                      note="내가 5단계로 마친 할 일의 개인 횟수 평균"
                       color="green"
                     />
                     <Metric
@@ -1062,7 +1248,9 @@ function App() {
                     <h2>마음이 남긴 변화</h2>
                     <p>완료할 때 남긴 1~5단계의 체감 기록이에요.</p>
                     {ratings.map((label, i) => {
-                      const n = all.filter((e) => e.rating === i + 1).length;
+                      const n = statisticItems.filter(
+                        (e) => e.rating === i + 1,
+                      ).length;
                       return (
                         <div className="rating-row" key={label}>
                           <span>
@@ -1131,6 +1319,17 @@ function App() {
                 </>
               )}
               {tab === "team" && (
+                <CirclePanel
+                  circle={circle}
+                  pending={circlePending}
+                  uid={profile.uid}
+                  notify={notify}
+                  run={run}
+                  busy={busy}
+                  entries={items}
+                />
+              )}
+              {tab === "team" && !useCommunity && (
                 <div className="panel team-panel">
                   <div className="section-title">
                     <h2>🌳 {teamName}</h2>
@@ -1336,6 +1535,33 @@ function App() {
                     }
                   />
                 </label>
+                {useCommunity && !draft.secret && (
+                  <label className="share-scope">
+                    누구와 나눌까요?
+                    <select
+                      aria-label="공유 범위"
+                      value={
+                        shareTeam || circle?.people[profile.uid]?.team || ""
+                      }
+                      onChange={(e) => setShareTeam(e.target.value)}
+                    >
+                      {circle?.people[profile.uid]?.role === "director" && (
+                        <option value="all">기도단 전체</option>
+                      )}
+                      {Object.entries(circle?.teams || {})
+                        .filter(
+                          ([id]) =>
+                            circle?.director === profile.uid ||
+                            id === circle?.people[profile.uid]?.team,
+                        )
+                        .map(([id, t]) => (
+                          <option key={id} value={id}>
+                            {t.name}과 공유
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                )}
                 <label className="secret-toggle">
                   <input
                     type="checkbox"
@@ -1491,6 +1717,12 @@ function App() {
                   체험 데이터는 이 브라우저에 저장되며 다른 사람과 공유되지
                   않습니다. 실제 연결 방법은 저장소 README에 있어요.
                 </p>
+                <AccountOptions notify={notify} run={run} busy={busy} />
+                <p className="hint">
+                  같은 휴대폰의 같은 브라우저에서 로그아웃하지 않으면 자동으로
+                  이어집니다. 시크릿 모드·브라우저 데이터 삭제·다른
+                  브라우저에서는 다시 로그인해야 해요.
+                </p>
                 {!signed && (
                   <button
                     className="primary full"
@@ -1587,8 +1819,74 @@ function App() {
                       {current.kind === "prayer"
                         ? "함께 기도한"
                         : "실천을 남긴"}{" "}
-                      횟수 <strong>{current.count}번</strong>
+                      횟수{" "}
+                      <strong>{current.totalCount ?? current.count}번</strong>
                     </div>
+                    {current.circleId && (
+                      <div className="community-entry-note">
+                        <p>
+                          내 기록 {current.myCount}회 · 참여{" "}
+                          {Object.keys(current.counts || {}).length}명 ·{" "}
+                          {current.teamId === "all"
+                            ? "기도단 전체 공유"
+                            : circle?.teams[current.teamId || ""]?.name}
+                        </p>
+                        <details>
+                          <summary>누가 함께했나요?</summary>
+                          <ul className="participation-list">
+                            {Object.entries(current.counts || {}).map(
+                              ([id, n]) => (
+                                <li key={id}>
+                                  {circle?.people[id]?.name || "팀원"} · {n}회
+                                </li>
+                              ),
+                            )}
+                          </ul>
+                        </details>
+                        {!current.closed &&
+                          (current.author === profile.uid ||
+                            circle?.director === profile.uid ||
+                            circle?.teams[current.teamId || ""]?.leader ===
+                              profile.uid) && (
+                            <details>
+                              <summary>공통 기도·할 일 전체 마무리</summary>
+                              <p>
+                                모든 참여자의 공통 항목을 마무리합니다. 개인
+                                완료와 별개입니다.
+                              </p>
+                              <select
+                                aria-label="공통 마무리 결과"
+                                value={rating}
+                                onChange={(e) =>
+                                  setRating(Number(e.target.value))
+                                }
+                              >
+                                {ratings.map((r, i) => (
+                                  <option key={r} value={i + 1}>
+                                    {i + 1}단계 · {r}
+                                  </option>
+                                ))}
+                              </select>
+                              <button
+                                className="secondary"
+                                disabled={busy}
+                                onClick={() =>
+                                  run(async () => {
+                                    await sharedCommand("close", {
+                                      id: current.id,
+                                      rating,
+                                    });
+                                    setSelected(null);
+                                    notify("공통 기록을 마무리했어요.");
+                                  })
+                                }
+                              >
+                                공통 기록 마무리
+                              </button>
+                            </details>
+                          )}
+                      </div>
+                    )}
                     {current.rating == null ? (
                       <>
                         <button

@@ -16,6 +16,13 @@ export type Entry = {
   completedAt?: number;
   comments: Comment[];
   source?: string;
+  circleId?: string;
+  teamId?: string;
+  counts?: Record<string, number>;
+  closed?: boolean;
+  result?: number;
+  totalCount?: number;
+  personalCompleted?: boolean;
 };
 export type Person = {
   uid: string;
@@ -26,6 +33,7 @@ export type Person = {
 export type Profile = {
   uid: string;
   name: string;
+  activeCircle?: string;
   xp: number;
   coins: number;
   decorations?: string[];
