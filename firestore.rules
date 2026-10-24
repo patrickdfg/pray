@@ -34,6 +34,20 @@ service cloud.firestore {
     && next.coins == resource.data.coins - prices[added] && next.coins >= 0;
   }
   match /profiles/{uid} {
+   function circleSelectionUpdate() {
+    let oldIds = resource.data.get('circleIds',resource.data.get('activeCircle','') == '' ? [] : [resource.data.activeCircle]);
+    let chosen = request.resource.data.activeCircle;
+    let ids = request.resource.data.get('circleIds',oldIds);
+    return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['activeCircle','circleIds'])
+     && validKey(chosen)
+     && ((ids == oldIds && chosen in ids) || (ids == oldIds.concat([chosen]) && !(chosen in oldIds))
+       || (oldIds == [] && ids == [] && resource.data.get('activeCircle','') == ''
+           && (getAfter(/databases/$(database)/documents/circles/$(chosen)).data.director == me()
+             || getAfter(/databases/$(database)/documents/circles/$(chosen)/requests/$(me())).data.uid == me())))
+     && (exists(/databases/$(database)/documents/circles/$(chosen)/members/$(me()))
+      || getAfter(/databases/$(database)/documents/circles/$(chosen)).data.director == me()
+      || getAfter(/databases/$(database)/documents/circles/$(chosen)/requests/$(me())).data.uid == me());
+   }
    allow get: if signed() && uid == me();
    allow create: if signed() && uid == me()
     && request.resource.data.keys().hasOnly(['uid','name','xp','coins','decorations','activeTeam','createdAt','dailyDay','dailyCount','lastEvent','accountKind'])
@@ -48,9 +62,7 @@ service cloud.firestore {
     || purchaseUpdate()
     || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name']) && request.resource.data.name is string && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 80)
     || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['accountKind']) && request.resource.data.accountKind == (permanent() ? 'permanent' : 'guest'))
-    || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['activeCircle']) && resource.data.get('activeCircle','') == '' && validKey(request.resource.data.activeCircle)
-     && (getAfter(/databases/$(database)/documents/circles/$(request.resource.data.activeCircle)).data.director == me()
-       || getAfter(/databases/$(database)/documents/circles/$(request.resource.data.activeCircle)/requests/$(me())).data.uid == me()))
+    || circleSelectionUpdate()
     || (request.resource.data.lastEvent is map && 'team' in request.resource.data.lastEvent && rewardUpdate())
     || (request.resource.data.lastEvent is map && 'circle' in request.resource.data.lastEvent && circleRewardUpdate()));
   }
@@ -171,7 +183,7 @@ service cloud.firestore {
   function circleMember(id) { return signed() && (circleData(id).get('schema',2) == 3 ? exists(/databases/$(database)/documents/circles/$(id)/members/$(me())) : me() in circleData(id).people); }
   function circleManager(id,team) { let c=circleData(id); return c.get('schema',2) == 3 ? circleMember(id) && (c.director == me() || get(/databases/$(database)/documents/circles/$(id)/teamDocs/$(team)).data.leader == me()) : permanent() && (c.director == me() || c.teams[team].leader == me()); }
   function circlePerson(id,uid) { let c=circleData(id); return c.get('schema',2) == 3 ? get(/databases/$(database)/documents/circles/$(id)/members/$(uid)).data : c.people[uid]; }
-  function circleCanRead(id,team) { let c=circleData(id); return circleMember(id) && (c.director == me() || team == 'all' || team == circlePerson(id,me()).team || (c.get('schema',2) == 3 && circleManager(id,team))); }
+  function circleCanRead(id,team) { let c=circleData(id); return circleMember(id) && (c.director == me() || team == 'all' || (c.get('schema',2) == 3 ? team in circlePerson(id,me()).get('teams',[circlePerson(id,me()).team]) || circleManager(id,team) : team == circlePerson(id,me()).team)); }
   function circleEvent(id,item,event,kind) {
    let path=/databases/$(database)/documents/circles/$(id)/entries/$(item)/events/$(event);
    return validKey(event) && !exists(path) && getAfter(path).data == {'uid':me(),'kind':kind,'at':request.time};
@@ -315,7 +327,7 @@ service cloud.firestore {
     && request.resource.data.schema == 3 && request.resource.data.director == me() && request.resource.data.createdAt == request.time && request.resource.data.lastEntry == ''
     && request.resource.data.name is string && request.resource.data.name.size()>0 && request.resource.data.name.size()<=40
     && getAfter(/databases/$(database)/documents/circles/$(circle)/members/$(me())).data.role == 'director'
-    && profile().get('activeCircle','') == '' && getAfter(/databases/$(database)/documents/profiles/$(me())).data.activeCircle == circle;
+    && getAfter(/databases/$(database)/documents/profiles/$(me())).data.activeCircle == circle;
    allow update: if signed() && ((resource.data.director == me() && permanent() && resource.data.get('schema',2) == 2 && request.resource.data.schema == 3 && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['schema']))
     || (v3(circle) && circleMember(circle) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastEntry']) && validKey(request.resource.data.lastEntry)
       && !exists(/databases/$(database)/documents/circles/$(circle)/entries/$(request.resource.data.lastEntry))
@@ -334,13 +346,33 @@ service cloud.firestore {
      let r=get(/databases/$(database)/documents/circles/$(circle)/requests/$(uid)).data;let t=team3(circle,r.team);
      return r.status == 'pending' && request.resource.data == {'name':r.name,'team':r.team,'role':'member'}
       && getAfter(/databases/$(database)/documents/circles/$(circle)/requests/$(uid)).data.status == 'accepted'
+      && !t.get('archived',false)
       && ((uid == me() && t.open && !t.approval && t.gate == r.proof) || circleManager(circle,r.team));
     }
-    allow update: if (migration3(circle) && request.resource.data == circleData(circle).people[uid]) || (v3(circle) && director3(circle) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role'])
-     && ((request.resource.data.role == 'leader' && get(/databases/$(database)/documents/profiles/$(uid)).data.get('accountKind','permanent') == 'permanent'
+    function addMembership3() {
+     let r=get(/databases/$(database)/documents/circles/$(circle)/requests/$(uid)).data;
+     let t=team3(circle,r.team);
+     let before=resource.data.get('teams',[resource.data.team]);
+     return r.status == 'pending' && !(r.team in before) && !t.get('archived',false)
+      && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['teams'])
+      && request.resource.data.teams == before.concat([r.team])
+      && getAfter(/databases/$(database)/documents/circles/$(circle)/requests/$(uid)).data.status == 'accepted'
+      && ((uid == me() && t.open && !t.approval && t.gate == r.proof) || circleManager(circle,r.team));
+    }
+    function removeMembership3() {
+     let team=request.resource.data.lastRemovedTeam;
+     let before=resource.data.get('teams',[resource.data.team]);
+     return validKey(team) && team in before && uid != circleData(circle).director
+      && team3(circle,team).leader != uid && circleManager(circle,team)
+      && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['teams','lastRemovedTeam'])
+      && request.resource.data.teams == before.removeAll([team]);
+    }
+    allow update: if (migration3(circle) && request.resource.data == circleData(circle).people[uid]) || (v3(circle) && director3(circle) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role','team'])
+     && ((request.resource.data.role == 'leader' && request.resource.data.team in resource.data.get('teams',[resource.data.team]) && get(/databases/$(database)/documents/profiles/$(uid)).data.get('accountKind','permanent') == 'permanent'
         && getAfter(/databases/$(database)/documents/circles/$(circle)/teamDocs/$(resource.data.team)).data.leader == uid)
       || (uid != circleData(circle).director && resource.data.role == 'leader' && request.resource.data.role == 'member'
-        && getAfter(/databases/$(database)/documents/circles/$(circle)/teamDocs/$(resource.data.team)).data.leader != uid)));
+        && getAfter(/databases/$(database)/documents/circles/$(circle)/teamDocs/$(resource.data.team)).data.leader != uid)))
+     || (v3(circle) && (addMembership3() || removeMembership3()));
    }
    match /teamDocs/{team} {
     allow get: if circleMember(circle) || (signed() && exists(/databases/$(database)/documents/circles/$(circle)/requests/$(me())) && get(/databases/$(database)/documents/circles/$(circle)/requests/$(me())).data.team == team);
@@ -348,30 +380,48 @@ service cloud.firestore {
     allow create: if signed() && request.resource.data.keys().hasOnly(['name','leader','code','gate','open','approval','parentTeam'])
      && ((request.resource.data.name is string && request.resource.data.name.size()>0 && request.resource.data.name.size()<=40
        && request.resource.data.leader == me() && request.resource.data.code == '' && request.resource.data.gate == '' && !request.resource.data.open && !request.resource.data.approval
-       && ((!exists(/databases/$(database)/documents/circles/$(circle)) && permanent() && getAfter(/databases/$(database)/documents/circles/$(circle)).data.director == me()) || (v3(circle) && circleMember(circle) && request.resource.data.parentTeam == member3(circle,me()).team)))
+       && ((!exists(/databases/$(database)/documents/circles/$(circle)) && permanent() && getAfter(/databases/$(database)/documents/circles/$(circle)).data.director == me()) || (v3(circle) && circleMember(circle) && request.resource.data.parentTeam in member3(circle,me()).get('teams',[member3(circle,me()).team]))))
       || (migration3(circle) && request.resource.data == circleData(circle).teams[team]));
     allow update: if (migration3(circle) && request.resource.data == circleData(circle).teams[team]) || (v3(circle) && circleManager(circle,team)
      && ((request.resource.data.diff(resource.data).affectedKeys().hasOnly(['gate','code','open','approval']) && request.resource.data.open is bool && request.resource.data.approval is bool
        && request.resource.data.code.matches('^[A-Z0-9]{8,16}$') && request.resource.data.gate.matches('^[a-f0-9]{64}$')
        && getAfter(/databases/$(database)/documents/circleGates/$(request.resource.data.gate)).data == {'circle':circle,'team':team,'code':request.resource.data.code,'schema':3})
       || (director3(circle) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['leader'])
-       && request.resource.data.leader != circleData(circle).director && member3(circle,request.resource.data.leader).team == team
+       && request.resource.data.leader != circleData(circle).director && team in member3(circle,request.resource.data.leader).get('teams',[member3(circle,request.resource.data.leader).team]) && getAfter(/databases/$(database)/documents/circles/$(circle)/members/$(request.resource.data.leader)).data.team == team
        && get(/databases/$(database)/documents/profiles/$(request.resource.data.leader)).data.get('accountKind','permanent') == 'permanent'
        && getAfter(/databases/$(database)/documents/circles/$(circle)/members/$(request.resource.data.leader)).data.role == 'leader'
-       && (resource.data.leader == circleData(circle).director || member3(circle,resource.data.leader).team != team || getAfter(/databases/$(database)/documents/circles/$(circle)/members/$(resource.data.leader)).data.role == 'member'))));
+       && (resource.data.leader == circleData(circle).director || member3(circle,resource.data.leader).team != team || getAfter(/databases/$(database)/documents/circles/$(circle)/members/$(resource.data.leader)).data.role == 'member'))
+      || (resource.data.get('parentTeam','') != '' && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['archived','open'])
+       && request.resource.data.archived is bool && request.resource.data.archived != resource.data.get('archived',false)
+       && request.resource.data.open == false)));
    }
    match /requests/{uid} {
     allow create: if v3(circle) && signed() && uid == me() && request.resource.data.keys().hasOnly(['uid','name','team','proof','createdAt','status'])
      && request.resource.data.uid == me() && request.resource.data.name is string && request.resource.data.name.size()>0 && request.resource.data.name.size()<=40 && request.resource.data.createdAt == request.time && request.resource.data.status == 'pending'
-     && team3(circle,request.resource.data.team).open && team3(circle,request.resource.data.team).gate == request.resource.data.proof
-     && get(/databases/$(database)/documents/circleGates/$(request.resource.data.proof)).data.circle == circle && profile().get('activeCircle','') in ['',circle];
-    allow update: if v3(circle) && signed() && resource.data.status == 'pending' && request.resource.data.status == 'accepted' && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
-     && getAfter(/databases/$(database)/documents/circles/$(circle)/members/$(uid)).data == {'name':resource.data.name,'team':resource.data.team,'role':'member'};
+     && team3(circle,request.resource.data.team).open && !team3(circle,request.resource.data.team).get('archived',false) && team3(circle,request.resource.data.team).gate == request.resource.data.proof
+     && get(/databases/$(database)/documents/circleGates/$(request.resource.data.proof)).data.circle == circle;
+    allow update: if v3(circle) && signed() &&
+     ((resource.data.status == 'pending' && request.resource.data.status == 'accepted'
+       && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+       && (exists(/databases/$(database)/documents/circles/$(circle)/members/$(uid))
+         ? getAfter(/databases/$(database)/documents/circles/$(circle)/members/$(uid)).data.teams ==
+           member3(circle,uid).get('teams',[member3(circle,uid).team]).concat([resource.data.team])
+         : getAfter(/databases/$(database)/documents/circles/$(circle)/members/$(uid)).data ==
+           {'name':resource.data.name,'team':resource.data.team,'role':'member'}))
+      || (uid == me() && resource.data.status == 'accepted'
+       && request.resource.data.keys().hasOnly(['uid','name','team','proof','createdAt','status'])
+       && request.resource.data.uid == uid && request.resource.data.createdAt == request.time
+       && request.resource.data.status == 'pending'
+       && request.resource.data.name is string && request.resource.data.name.size()>0 && request.resource.data.name.size()<=40
+       && team3(circle,request.resource.data.team).open
+       && !team3(circle,request.resource.data.team).get('archived',false)
+       && team3(circle,request.resource.data.team).gate == request.resource.data.proof
+       && get(/databases/$(database)/documents/circleGates/$(request.resource.data.proof)).data.circle == circle));
    }
    match /entries/{item} {
     allow create: if v3(circle) && circleMember(circle) && request.resource.data.keys().hasOnly(['schema','title','body','kind','author','authorName','teamId','createdAt','count','participantCount','commentCount','source','closed'])
      && request.resource.data.schema == 3 && content3(request.resource.data) && request.resource.data.author == me() && request.resource.data.authorName == member3(circle,me()).name
-     && (request.resource.data.teamId == member3(circle,me()).team || (request.resource.data.teamId != 'all' && circleManager(circle,request.resource.data.teamId)) || (director3(circle) && request.resource.data.teamId == 'all'))
+     && (request.resource.data.teamId in member3(circle,me()).get('teams',[member3(circle,me()).team]) || (request.resource.data.teamId != 'all' && circleManager(circle,request.resource.data.teamId)) || (director3(circle) && request.resource.data.teamId == 'all'))
      && request.resource.data.createdAt == request.time && request.resource.data.count == 0 && request.resource.data.participantCount == 0 && request.resource.data.commentCount == 0 && request.resource.data.closed == false
      && request.resource.data.source == (director3(circle) ? '단장이 나눴어요' : circleManager(circle,request.resource.data.teamId) ? '팀장이 나눴어요' : '팀원이 나눴어요')
      && getAfter(/databases/$(database)/documents/circles/$(circle)).data.lastEntry == item;

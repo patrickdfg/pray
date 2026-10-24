@@ -523,6 +523,71 @@ const fs = require("fs"),
         "보존",
       );
     });
+    await test("A single profile can create multiple circles without leaving the first", async () => {
+      const { id: second } = await dc("create", {
+        name: "두 번째 기도단",
+        teamName: "새로운 첫 팀",
+      });
+      const profile = (await getDoc(doc(d, "profiles/director"))).data();
+      assert.equal(profile.activeCircle, second);
+      assert(profile.circleIds.includes(circle));
+      assert(profile.circleIds.includes(second));
+      assert.equal(
+        (await getDoc(doc(d, `circles/${circle}/members/director`))).data().role,
+        "director",
+      );
+      await updateDoc(doc(d, "profiles/director"), { activeCircle: circle });
+      assert.equal(
+        (await getDoc(doc(d, "profiles/director"))).data().activeCircle,
+        circle,
+      );
+    });
+    await test("Existing members can join an additional team, then lose only that team's access when released", async () => {
+      await ac("join", { code: "EFGH5678EFGH", password, name: "guest" });
+      const pendingRequest = (await getDoc(doc(a, `circles/${circle}/requests/guest`))).data();
+      assert.equal(pendingRequest.status, "pending");
+      await assertFails(ac("admit", { circle, schema: 3 }));
+      await bc("approve", { circle, schema: 3, uid: "guest" });
+      const member = (await getDoc(doc(a, `circles/${circle}/members/guest`))).data();
+      assert.deepEqual(member.teams, [team, t2]);
+      assert.equal(member.team, team);
+      await getDoc(doc(a, `circles/${circle}/entries/${privateId}`));
+      await assert.rejects(ac("removeMember", { circle, schema: 3, team: t2, uid: "guest" }));
+      await bc("removeMember", { circle, schema: 3, team: t2, uid: "guest" });
+      const released = (await getDoc(doc(a, `circles/${circle}/members/guest`))).data();
+      assert.deepEqual(released.teams, [team]);
+      await assertFails(getDoc(doc(a, `circles/${circle}/entries/${privateId}`)));
+      await getDoc(doc(a, `circles/${circle}/entries/${item}`));
+    });
+    await test("A manager must release members before archiving; stored prayer remains recoverable", async () => {
+      const { team: candidate } = await dc("team", { circle, schema: 3, name: "보관 테스트팀" });
+      await dc("gate", {
+        circle, schema: 3, team: candidate, code: "ARCHIVE12345",
+        password, open: true, approval: false,
+      });
+      const extraDb = db("archive-member", "anonymous");
+      await createSparkCommand(extraDb, "archive-member", "보관팀원")("bootstrap", { accountKind: "guest" });
+      const extra = scalableCommands(extraDb, "archive-member");
+      await extra("join", { code: "ARCHIVE12345", password, name: "보관팀원" });
+      await extra("admit", { circle, schema: 3 });
+      const { id: saved } = await dc("createEntry", {
+        circle, schema: 3, teamId: candidate, title: "보존할 기도",
+        body: "삭제하지 마세요", kind: "prayer",
+      });
+      await assert.rejects(dc("archiveTeam", { circle, schema: 3, team: candidate }), /해지/);
+      await assertFails(
+        updateDoc(doc(extraDb, `circles/${circle}/teamDocs/${candidate}`), { archived: true, open: false }),
+      );
+      await dc("removeMember", { circle, schema: 3, team: candidate, uid: "archive-member" });
+      await dc("archiveTeam", { circle, schema: 3, team: candidate });
+      const archived = (await getDoc(doc(d, `circles/${circle}/teamDocs/${candidate}`))).data();
+      assert.equal(archived.archived, true);
+      assert.equal(archived.open, false);
+      assert.equal((await getDoc(doc(d, `circles/${circle}/entries/${saved}`))).data().body, "삭제하지 마세요");
+      await assert.rejects(extra("join", { code: "ARCHIVE12345", password, name: "보관팀원" }));
+      await dc("restoreTeam", { circle, schema: 3, team: candidate });
+      assert.equal((await getDoc(doc(d, `circles/${circle}/teamDocs/${candidate}`))).data().archived, false);
+    });
     console.log(
       `Scalable storage: ${passed} pagination/no-cap/migration/security scenarios passed.`,
     );

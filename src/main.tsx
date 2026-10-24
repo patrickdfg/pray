@@ -129,7 +129,26 @@ function App() {
     directory,
   } = useCircle(profile.uid, profile.activeCircle);
   const useCommunity = !!circle && !legacyView;
+  const memberTeams =
+    circle?.people[profile.uid]?.teams ??
+    (circle?.people[profile.uid]?.team
+      ? [circle.people[profile.uid].team]
+      : []);
+  const usableTeams = Object.entries(circle?.teams || {})
+    .filter(
+      ([id, t]) =>
+        !t.archived &&
+        (circle?.director === profile.uid ||
+          memberTeams.includes(id) ||
+          t.leader === profile.uid),
+    )
+    .map(([id]) => id);
+  const currentTeam = usableTeams[0] || "";
   const [shareTeam, setShareTeam] = useState("");
+  useEffect(() => {
+    setViewScope("all-teams");
+    setShareTeam("");
+  }, [profile.activeCircle]);
   const [anonymous, setAnonymous] = useState(false);
   const [battle, setBattle] = useState(0);
   const room = useRoomLayout(profile.uid);
@@ -332,7 +351,7 @@ function App() {
       return;
     setItems([]);
     setTeamName(
-      circle.teams[circle.people[profile.uid]?.team]?.name || circle.name,
+      circle.teams[currentTeam]?.name || circle.name,
     );
     const update = (values: any[]) =>
       setItems(
@@ -365,12 +384,14 @@ function App() {
         db,
         circle.id,
         profile.uid,
-        circle.people[profile.uid].team,
-        viewScope,
+        currentTeam,
+        currentTeam ? viewScope : "all",
         circle.director === profile.uid,
         update,
         setFeedMeta,
         (e) => notify(escError(e)),
+        undefined,
+        usableTeams,
       );
       feedRef.current = f;
       return () => {
@@ -423,6 +444,7 @@ function App() {
     filter,
     circle?.id,
     circle?.people[profile.uid]?.team,
+    circle?.people[profile.uid]?.teams?.join("|"),
     circle?.people[profile.uid]?.role,
     profile.uid,
   ]);
@@ -438,7 +460,7 @@ function App() {
           circle: circle.id,
           schema: circle.schema || 2,
           name: circle.people[profile.uid]?.name || profile.name,
-          teamId: shareTeam || circle.people[profile.uid]?.team,
+          teamId: shareTeam || currentTeam,
           ...payload,
         },
       );
@@ -1046,6 +1068,8 @@ function App() {
                 circle={circle}
                 pending={circlePending}
                 uid={profile.uid}
+                activeCircle={profile.activeCircle || ""}
+                circleIds={profile.circleIds || (profile.activeCircle ? [profile.activeCircle] : [])}
                 notify={notify}
                 run={run}
                 busy={busy}
@@ -1296,6 +1320,7 @@ function App() {
                           기준이에요.
                         </p>
                         {(circle.director === profile.uid ||
+                          usableTeams.length > 1 ||
                           Object.values(circle.teams).some(
                             (t) => t.leader === profile.uid,
                           )) && (
@@ -1315,9 +1340,10 @@ function App() {
                               {Object.entries(circle.teams)
                                 .filter(
                                   ([id, t]) =>
-                                    circle.director === profile.uid ||
-                                    id === circle.people[profile.uid]?.team ||
-                                    t.leader === profile.uid,
+                                    !t.archived &&
+                                    (circle.director === profile.uid ||
+                                      memberTeams.includes(id) ||
+                                      t.leader === profile.uid),
                                 )
                                 .map(([id, t]) => (
                                   <option key={id} value={id}>
@@ -1602,6 +1628,8 @@ function App() {
                   circle={circle}
                   pending={circlePending}
                   uid={profile.uid}
+                  activeCircle={profile.activeCircle || ""}
+                  circleIds={profile.circleIds || (profile.activeCircle ? [profile.activeCircle] : [])}
                   notify={notify}
                   run={run}
                   busy={busy}
@@ -1830,7 +1858,7 @@ function App() {
                     <select
                       aria-label="공유 범위"
                       value={
-                        shareTeam || circle?.people[profile.uid]?.team || ""
+                        shareTeam || currentTeam
                       }
                       onChange={(e) => setShareTeam(e.target.value)}
                     >
@@ -1840,9 +1868,10 @@ function App() {
                       {Object.entries(circle?.teams || {})
                         .filter(
                           ([id, t]) =>
-                            circle?.director === profile.uid ||
-                            t.leader === profile.uid ||
-                            id === circle?.people[profile.uid]?.team,
+                            !t.archived &&
+                            (circle?.director === profile.uid ||
+                              t.leader === profile.uid ||
+                              memberTeams.includes(id)),
                         )
                         .map(([id, t]) => (
                           <option key={id} value={id}>

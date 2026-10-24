@@ -15,10 +15,13 @@ import { normalize } from "./spark";
 export type CirclePerson = {
   name: string;
   team: string;
+  teams?: string[];
+  lastRemovedTeam?: string;
   role: "member" | "leader" | "director";
 };
 export type CircleTeam = {
   parentTeam?: string;
+  archived?: boolean;
   name: string;
   leader: string;
   code: string;

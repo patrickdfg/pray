@@ -2,6 +2,11 @@ import {
   collection,
   doc,
   getDoc,
+  getDocs,
+  query,
+  where,
+  limit,
+  startAfter,
   runTransaction,
   serverTimestamp,
   Timestamp,
@@ -19,6 +24,13 @@ const key = (v: unknown) => {
   if (!/^[A-Za-z0-9_-]+$/.test(s)) throw Error("잘못된 식별자예요.");
   return s;
 };
+function linkedCircles(p: Record<string, any>): string[] {
+  return Array.isArray(p.circleIds)
+    ? p.circleIds
+    : p.activeCircle
+      ? [p.activeCircle]
+      : [];
+}
 function changed(circle: string, team?: string) {
   if (typeof window !== "undefined")
     window.dispatchEvent(
@@ -36,8 +48,8 @@ export function scalableCommands(db: Firestore, uid: string) {
         team = crypto.randomUUID();
       await runTransaction(db, async (tx) => {
         const p = await tx.get(profile);
-        if (!p.exists() || p.data().activeCircle)
-          throw Error("이미 기도단에 소속되어 있어요.");
+        if (!p.exists()) throw Error("먼저 계정으로 로그인해 주세요.");
+        const circles = linkedCircles(p.data());
         tx.set(ref, {
           schema: 3,
           name: text(data.name, 40),
@@ -58,7 +70,10 @@ export function scalableCommands(db: Firestore, uid: string) {
           open: false,
           approval: false,
         });
-        tx.update(profile, { activeCircle: ref.id });
+        tx.update(profile, {
+          activeCircle: ref.id,
+          circleIds: [...circles, ref.id],
+        });
       });
       return { id: ref.id, schema: 3 };
     }
@@ -66,27 +81,43 @@ export function scalableCommands(db: Firestore, uid: string) {
       const proof = await joinProof(data.code, data.password),
         g = await getDoc(doc(db, "circleGates", proof));
       if (!g.exists()) throw Error("팀 코드 또는 참여 비밀번호가 맞지 않아요.");
-      if (g.data().schema !== 3)
+      if (g.data().schema !== 3) {
+        const p = await getDoc(profile);
+        if (p.data()?.activeCircle)
+          throw Error("기존 방식의 기도단은 먼저 새 저장 구조로 전환해야 여러 기도단에 가입할 수 있어요.");
         return legacyCircleCommands(db, uid)(action, data);
+      }
       const gate = g.data(),
         ref = doc(db, "circles", gate.circle),
         rr = doc(ref, "requests", uid);
       await runTransaction(db, async (tx) => {
         const p = await tx.get(profile),
-          r = await tx.get(rr);
+          r = await tx.get(rr),
+          m = await tx.get(doc(ref, "members", uid));
         if (!p.exists()) throw Error("먼저 이름으로 시작해 주세요.");
-        if (p.data().activeCircle && p.data().activeCircle !== gate.circle)
-          throw Error("이미 다른 기도단에 참여 중이에요.");
-        if (r.exists()) return;
-        tx.set(rr, {
+        // Team details stay private until admission; Firestore rules validate the gate.
+        const circles = linkedCircles(p.data());
+        const joined = m.exists() ? (m.data().teams ?? [m.data().team]) : [];
+        if (joined.includes(gate.team))
+          throw Error("이미 가입한 팀이에요.");
+        if (r.exists() && r.data().status === "pending")
+          throw Error("이 기도단에 처리 중인 참여 요청이 있어요.");
+        const request = {
           uid,
           name: text(data.name, 40),
           team: gate.team,
           proof,
           createdAt: serverTimestamp(),
           status: "pending",
+        };
+        if (r.exists()) tx.update(rr, request);
+        else tx.set(rr, request);
+        tx.update(profile, {
+          activeCircle: gate.circle,
+          ...(!circles.includes(gate.circle)
+            ? { circleIds: [...circles, gate.circle] }
+            : {}),
         });
-        tx.update(profile, { activeCircle: gate.circle });
       });
       return { id: gate.circle, schema: 3 };
     }
@@ -157,14 +188,22 @@ export function scalableCommands(db: Firestore, uid: string) {
         rr = doc(ref, "requests", target),
         mr = doc(ref, "members", target);
       await runTransaction(db, async (tx) => {
-        const r = await tx.get(rr);
+        const r = await tx.get(rr),
+          m = await tx.get(mr);
         if (!r.exists()) throw Error("참여 요청을 확인해 주세요.");
         if (r.data().status === "accepted") return;
-        tx.set(mr, {
-          name: r.data().name,
-          team: r.data().team,
-          role: "member",
-        });
+        if (m.exists()) {
+          const teams: string[] = m.data().teams ?? [m.data().team];
+          if (teams.includes(r.data().team))
+            throw Error("이미 가입한 팀이에요.");
+          tx.update(mr, { teams: [...teams, r.data().team] });
+        } else {
+          tx.set(mr, {
+            name: r.data().name,
+            team: r.data().team,
+            role: "member",
+          });
+        }
         tx.update(rr, { status: "accepted" });
       });
       changed(circle);
@@ -176,10 +215,13 @@ export function scalableCommands(db: Firestore, uid: string) {
       await runTransaction(db, async (tx) => {
         const m = await tx.get(doc(ref, "members", uid));
         if (!m.exists()) throw Error("팀에 참여한 뒤 내 팀을 만들 수 있어요.");
+        const joined: string[] = m.data().teams ?? [m.data().team];
+        const parentTeam = joined[0];
+        if (!parentTeam) throw Error("먼저 팀에 가입한 뒤 새 팀을 만들 수 있어요.");
         tx.set(r, {
           name: text(data.name, 40),
           leader: uid,
-          parentTeam: m.data().team,
+          parentTeam,
           code: "",
           gate: "",
           open: false,
@@ -188,6 +230,78 @@ export function scalableCommands(db: Firestore, uid: string) {
       });
       changed(circle, team);
       return { team };
+    }
+    if (action === "removeMember") {
+      const team = key(data.team),
+        target = key(data.uid),
+        tr = doc(ref, "teamDocs", team),
+        mr = doc(ref, "members", target);
+      await runTransaction(db, async (tx) => {
+        const c = await tx.get(ref),
+          t = await tx.get(tr),
+          m = await tx.get(mr);
+        if (!c.exists() || !t.exists() || !m.exists())
+          throw Error("팀과 팀원을 다시 확인해 주세요.");
+        if (t.data().leader !== uid && c.data().director !== uid)
+          throw Error("팀장만 팀원을 해지할 수 있어요.");
+        if (target === t.data().leader || target === c.data().director)
+          throw Error("팀장은 본인을 해지할 수 없어요.");
+        const teams: string[] = m.data().teams ?? [m.data().team];
+        if (!teams.includes(team)) throw Error("해당 팀 소속이 아니에요.");
+        tx.update(mr, {
+          teams: teams.filter((value) => value !== team),
+          lastRemovedTeam: team,
+        });
+      });
+      changed(circle, team);
+      return;
+    }
+    if (action === "archiveTeam" || action === "restoreTeam") {
+      const team = key(data.team),
+        tr = doc(ref, "teamDocs", team);
+      if (action === "archiveTeam") {
+        // Check both legacy primary memberships and expanded memberships.
+        // Records and the team document are preserved for recovery.
+        const members = collection(ref, "members");
+        const teamDoc = await getDoc(tr);
+        if (!teamDoc.exists()) throw Error("팀을 찾지 못했어요.");
+        // Scan every page: a first-page-only check could miss members past row 20.
+        for (const filter of [
+          where("team", "==", team),
+          where("teams", "array-contains", team),
+        ]) {
+          let cursor: any = null;
+          for (;;) {
+            const page = await getDocs(
+              query(members, filter, ...(cursor ? [startAfter(cursor)] : []), limit(20)),
+            );
+            if (
+              page.docs.some(
+                (member) =>
+                  member.id !== teamDoc.data().leader &&
+                  (member.data().teams ?? [member.data().team]).includes(team),
+              )
+            ) throw Error("팀원을 먼저 모두 해지해야 팀을 삭제할 수 있어요.");
+            if (page.size < 20) break;
+            cursor = page.docs[page.docs.length - 1];
+          }
+        }
+      }
+      await runTransaction(db, async (tx) => {
+        const c = await tx.get(ref),
+          t = await tx.get(tr);
+        if (!c.exists() || !t.exists()) throw Error("팀을 찾지 못했어요.");
+        if (t.data().leader !== uid && c.data().director !== uid)
+          throw Error("팀장만 팀을 관리할 수 있어요.");
+        if (!t.data().parentTeam)
+          throw Error("처음 만든 기본 팀은 삭제할 수 없어요.");
+        tx.update(tr, {
+          archived: action === "archiveTeam",
+          open: false,
+        });
+      });
+      changed(circle, team);
+      return;
     }
     if (action === "gate") {
       const team = key(data.team),
@@ -228,14 +342,14 @@ export function scalableCommands(db: Firestore, uid: string) {
             !c.exists() ||
             !t.exists() ||
             !p.exists() ||
-            p.data().team !== team ||
+            !(p.data().teams ?? [p.data().team]).includes(team) ||
             target === c.data().director
           )
             throw Error("해당 팀원을 선택해 주세요.");
           const old = t.data().leader;
           const oldPerson =
             old !== target ? await tx.get(doc(ref, "members", old)) : null;
-          tx.update(mr, { role: "leader" });
+          tx.update(mr, { role: "leader", team });
           if (
             old !== c.data().director &&
             old !== target &&
