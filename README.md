@@ -8,9 +8,9 @@
 
 2026-10-23 디자인 리빌딩과 편집 복원, 검증 결과 및 **공유 편집의 Firebase 규칙 배포 대기 사항**은 [REBUILD-NOTES.md](REBUILD-NOTES.md)를 확인해 주세요.
 
-**[기도숲 앱 열기](https://patrickdfg.github.io/pray/)** — GitHub Pages에 배포되어 있습니다. **Google로 가입·로그인**을 누르면 Google 계정으로 시작합니다. 처음 로그인할 때 프로필을 자동 생성하고, 다음부터는 같은 계정으로 로그인합니다. 이메일/비밀번호 가입은 제공하지 않습니다.
+**[기도숲 앱 열기](https://patrickdfg.github.io/pray/)** — GitHub Pages에 배포되어 있습니다. **Google로 가입·로그인**을 누르면 실제 Google 계정으로 시작합니다. 이메일 계정 또는 팀 코드·별명으로도 참여할 수 있습니다. 처음 로그인할 때 프로필을 만들고, 다음부터는 같은 브라우저에서 로그인 상태를 복원합니다.
 
-계정 없이 둘러보려면 **[체험 모드](https://patrickdfg.github.io/pray/?demo=1)**를 사용합니다. 체험 기록은 브라우저에만 저장되며 실제 팀 데이터와 분리됩니다.
+**공개 기도숲에는 체험 모드가 없습니다.** 기존에 공유된 `?demo=1` 주소도 실제 Firebase 서비스로 연결됩니다. 허구의 예시 기도·코인·팀은 공개 화면에 나타나지 않습니다. 별도 예시 데이터는 로컬 개발 서버(`localhost`)의 명시적인 테스트 주소에서만 사용할 수 있습니다.
 
 `main` 브랜치에 코드를 올리면 GitHub Actions에서 빌드와 규칙 테스트를 통과한 뒤 Pages에 자동 배포됩니다. Pages 빌드만 `/pray/` 경로를 사용하며 Firebase Hosting 빌드는 루트 경로를 사용합니다. 공개 주소에서도 등록·기록·댓글·마무리·비밀 저장·모바일 화면·보상 구매를 브라우저로 검증했습니다.
 
@@ -25,7 +25,7 @@
 - Firestore Security Rules + 클라이언트 트랜잭션: 가입 관계·동시 기록·보상·접근 권한 검증
 - 기기 브라우저 `localStorage`: 비밀 기도·비밀 할 일
 
-운영 Firebase 프로젝트는 `pray-quest`입니다. Google Authentication과 서울 리전 Firestore Standard를 사용합니다. 웹 앱 공개 구성은 GitHub Actions 저장소 변수 네 개로 전달하며, 서비스 계정 비밀키는 배포하지 않습니다. 환경변수가 없는 로컬 실행은 자동으로 체험 모드가 됩니다.
+운영 Firebase 프로젝트는 `pray-quest`입니다. Google Authentication과 서울 리전 Firestore Standard를 사용합니다. 웹 앱 공개 구성은 GitHub Actions 저장소 변수 네 개로 전달하며, 서비스 계정 비밀키는 배포하지 않습니다. 연결 설정이 없는 일반 접속은 예시 데이터로 대체하지 않고 연결 안내 화면을 표시합니다. 로컬 개발 서버의 `?demo=1`만 독립 테스트에 사용합니다.
 
 Spark는 서비스별 무료 한도가 있습니다. 전체 프로젝트의 무료 할당량을 소진하면 요청이 거부되거나 서비스가 일시 제한될 수 있습니다. 프로젝트를 Spark로 유지하고 결제 계정을 연결하지 않으면 유료 초과 사용으로 자동 전환되지 않습니다. 페이지 읽기와 화면에 보이는 기록 구독으로 사용량을 줄이지만, Firebase 전체 무료 할당량 안에서 항상 서비스가 계속된다는 보장은 아닙니다.
 
@@ -160,10 +160,10 @@ npm run test:browser
 
 ## 주요 파일
 
-- `src/main.tsx`: 화면과 기기 체험 모드
+- `src/main.tsx`: 실제 서비스 화면과 로컬 전용 테스트 화면
 - `src/garden.css`: 토끼의 포근한 방 테마와 모든 화면의 최종 반응형 규칙
 - `src/quest.css`: 기존 기본 구조와 애니메이션
-- `src/domain.ts`: 기록·통계·체험 보상
+- `src/domain.ts`: 기록·통계·로컬 테스트 보상
 - `src/spark.ts`: Spark용 Firestore 트랜잭션
 - `src/cloud.ts`: 선택적 Firebase 연결과 영구 로그인
 - `firestore.rules`: 팀 권한·보상·페이지 읽기 규칙
