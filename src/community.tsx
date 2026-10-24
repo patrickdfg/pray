@@ -2,6 +2,7 @@ import React, { useEffect, useLayoutEffect, useState } from "react";
 import {
   doc,
   getDoc,
+  updateDoc,
   collection,
   query,
   where,
@@ -46,7 +47,7 @@ export function useCircle(uid: string, id?: string) {
     );
   }, [uid, id]);
   useEffect(() => {
-    if (!id || !ready || pending) return;
+    if (!id || !ready) return;
     return watchDoc(`circles/${id}`, setRoot, () => setRoot(null));
   }, [id, ready, pending]);
   useEffect(() => {
@@ -238,10 +239,14 @@ export function CirclePanel({
   busy,
   entries,
   directory,
+  activeCircle,
+  circleIds,
 }: {
   circle: Circle | null;
   pending: boolean;
   uid: string;
+  activeCircle: string;
+  circleIds: string[];
   notify: (s: string) => void;
   run: (f: () => Promise<void>) => Promise<void>;
   busy: boolean;
@@ -265,15 +270,40 @@ export function CirclePanel({
     [gateCode, setGateCode] = useState(""),
     [gatePass, setGatePass] = useState(""),
     [open, setOpen] = useState(true),
-    [approval, setApproval] = useState(false);
+    [approval, setApproval] = useState(false),
+    [circleNames, setCircleNames] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (!db) return;
+    let alive = true;
+    void Promise.all(
+      circleIds.map(async (id) => {
+        try {
+          const result = await getDoc(doc(db!, "circles", id));
+          return [id, result.data()?.name || "참여 승인 대기 중"] as const;
+        } catch {
+          return [id, "참여 승인 대기 중"] as const;
+        }
+      }),
+    ).then((values) => {
+      if (alive) setCircleNames(Object.fromEntries(values));
+    });
+    return () => {
+      alive = false;
+    };
+  }, [circleIds.join("|")]);
   const person = circle?.people[uid];
   const director = person?.role === "director";
-  const teams = circle
+  const joinedTeams = person?.teams ?? (person?.team ? [person.team] : []);
+  const allTeams = circle
     ? Object.entries(circle.teams).filter(
-        ([id, t]) => director || id === person?.team || t.leader === uid,
+        ([id, t]) => director || joinedTeams.includes(id) || t.leader === uid,
       )
     : [];
+  const teams = allTeams.filter(([, t]) => !t.archived);
   const managedTeams = teams.filter(([, t]) => director || t.leader === uid);
+  const archivedTeams = allTeams.filter(
+    ([, t]) => t.archived && (director || t.leader === uid),
+  );
   const selected = managedTeams.some(([id]) => id === chosen)
     ? chosen
     : managedTeams[0]?.[0] || "";
@@ -335,6 +365,31 @@ export function CirclePanel({
   return (
     <div className="community panel" data-testid="community">
       <h2>🌳 기도단과 우리 팀</h2>
+      {circleIds.length > 0 && (
+        <div className="community-inline">
+          <label>
+            현재 기도단 선택
+            <select
+              aria-label="현재 기도단"
+              value={activeCircle}
+              onChange={(e) =>
+                run(async () => {
+                  await updateDoc(doc(db!, "profiles", uid), {
+                    activeCircle: e.target.value,
+                  });
+                  notify("선택한 기도단으로 이동했어요.");
+                })
+              }
+            >
+              {circleIds.map((id) => (
+                <option key={id} value={id}>
+                  {id === activeCircle && circle ? circle.name : circleNames[id] || "기도단 불러오는 중"}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      )}
       {!circle && !pending && (
         <>
           <p>팀 코드를 먼저 적고, 이름과 참여 비밀번호를 입력해 주세요.</p>
@@ -460,6 +515,72 @@ export function CirclePanel({
             {circle.schema === 3 ? "불러온 팀원" : "전체"}{" "}
             {Object.keys(circle.people).length}명
           </p>
+          <details className="community-extra">
+            <summary>다른 기도단·팀에 추가 가입</summary>
+            <p className="hint">
+              현재 기도단을 떠나지 않고 다른 기도단이나 팀에도 가입할 수 있어요.
+              가입하면 상단의 기도단 선택 메뉴로 오갈 수 있어요.
+            </p>
+            <label>
+              새 팀 코드
+              <input
+                value={code}
+                maxLength={16}
+                autoCapitalize="characters"
+                onChange={(e) => setCode(e.target.value.toUpperCase())}
+              />
+            </label>
+            <label>
+              참여할 이름
+              <input
+                value={name}
+                maxLength={40}
+                onChange={(e) => setName(e.target.value)}
+                placeholder={person?.name || "이름"}
+              />
+            </label>
+            <label>
+              참여 비밀번호
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </label>
+            <button className="secondary" disabled={busy} onClick={join}>
+              팀에 추가 가입
+            </button>
+          </details>
+          <details className="community-extra">
+            <summary>새 기도단 만들기</summary>
+            <p className="hint">
+              기존 기도단은 그대로 유지되고, 새 기도단의 단장이 됩니다.
+            </p>
+            <label>
+              새 기도단 및 첫 팀 이름
+              <input
+                value={teamName}
+                maxLength={40}
+                onChange={(e) => setTeamName(e.target.value)}
+              />
+            </label>
+            <button
+              className="secondary"
+              disabled={busy}
+              onClick={() =>
+                run(async () => {
+                  if (!sessionUser() || sessionUser()?.isAnonymous)
+                    throw Error("새 기도단은 Google 또는 이메일 계정으로 만들어 주세요.");
+                  await command("bootstrap");
+                  await act("create", { name: teamName, teamName });
+                  setTeamName("");
+                  notify("새 기도단을 만들었어요. 기존 기도단도 계속 이용할 수 있어요.");
+                })
+              }
+            >
+              새 기도단 생성
+            </button>
+          </details>
           {circle.schema !== 3 && director && (
             <div className="hint">
               <p>
@@ -488,7 +609,7 @@ export function CirclePanel({
           <div className="community-grid">
             {teams.map(([id, t]) => {
               const roster = Object.entries(circle.people).filter(
-                ([, p]) => p.team === id,
+                ([, p]) => (p.teams ?? [p.team]).includes(id),
               );
               const relevant = entries.filter(
                 (e) => e.teamId === id || e.teamId === "all",
@@ -538,10 +659,29 @@ export function CirclePanel({
                         {p.name} {u === uid ? "(나)" : ""} ·{" "}
                         {p.role === "director"
                           ? "단장"
-                          : p.role === "leader"
+                          : t.leader === u
                             ? "팀장"
                             : "팀원"}
                       </span>
+                      {(director || t.leader === uid) &&
+                        circle.schema === 3 &&
+                        u !== t.leader &&
+                        u !== circle.director && (
+                          <button
+                            className="secondary"
+                            disabled={busy}
+                            onClick={() => {
+                              if (!window.confirm(`${p.name}님을 '${t.name}' 팀에서 해지할까요? 기존 기도 기록은 보존됩니다.`))
+                                return;
+                              void run(async () => {
+                                await act("removeMember", { team: id, uid: u });
+                                notify("해당 팀에서 팀원 소속을 해지했어요.");
+                              });
+                            }}
+                          >
+                            팀에서 해지
+                          </button>
+                        )}
                       {director &&
                         u !== circle.director &&
                         p.role !== "leader" && (
@@ -709,6 +849,47 @@ export function CirclePanel({
                 비밀번호를 바꿔도 기존 팀원은 그대로예요. 비밀번호 원문은
                 저장하지 않습니다. 설정 변경 시 새 비밀번호를 입력해 주세요.
               </p>
+              {circle.schema === 3 && circle.teams[selected]?.parentTeam && (
+                <button
+                  className="text-button"
+                  disabled={busy}
+                  onClick={() => {
+                    const teamName = circle.teams[selected].name;
+                    if (!window.confirm(`'${teamName}' 팀을 목록에서 삭제할까요? 팀원을 먼저 해지해야 하며 기존 기록은 보관됩니다.`))
+                      return;
+                    void run(async () => {
+                      await act("archiveTeam", { team: selected });
+                      setChosen("");
+                      notify("팀을 보관했어요. 기존 기도 기록은 삭제되지 않았어요.");
+                    });
+                  }}
+                >
+                  팀 삭제 · 기존 기록 보관
+                </button>
+              )}
+            </details>
+          )}
+          {archivedTeams.length > 0 && (
+            <details className="community-extra">
+              <summary>보관된 팀 ({archivedTeams.length})</summary>
+              <p className="hint">삭제한 팀의 기도 기록은 보존됩니다. 필요하면 복원할 수 있어요.</p>
+              {archivedTeams.map(([id, t]) => (
+                <div className="circle-member" key={id}>
+                  <span>{t.name}</span>
+                  <button
+                    className="secondary"
+                    disabled={busy}
+                    onClick={() =>
+                      run(async () => {
+                        await act("restoreTeam", { team: id });
+                        notify("팀을 복원했어요. 필요하면 입장 설정을 다시 열어 주세요.");
+                      })
+                    }
+                  >
+                    팀 복원
+                  </button>
+                </div>
+              ))}
             </details>
           )}
           {manager && requests.length > 0 && (
