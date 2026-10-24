@@ -93,11 +93,9 @@ export function scalableCommands(db: Firestore, uid: string) {
       await runTransaction(db, async (tx) => {
         const p = await tx.get(profile),
           r = await tx.get(rr),
-          m = await tx.get(doc(ref, "members", uid)),
-          t = await tx.get(doc(ref, "teamDocs", gate.team));
+          m = await tx.get(doc(ref, "members", uid));
         if (!p.exists()) throw Error("먼저 이름으로 시작해 주세요.");
-        if (!t.exists() || t.data().archived || !t.data().open)
-          throw Error("현재 참여할 수 없는 팀이에요.");
+        // Team details stay private until admission; Firestore rules validate the gate.
         const circles = linkedCircles(p.data());
         const joined = m.exists() ? (m.data().teams ?? [m.data().team]) : [];
         if (joined.includes(gate.team))
