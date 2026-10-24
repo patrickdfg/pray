@@ -27,12 +27,16 @@ const fs = require("fs"),
           module: ts.ModuleKind.ESNext,
         },
       })
-      .outputText.replace('"./spark"', '"./spark-runtime.mjs"')
+      .outputText.replace(
+        /export \{ scalableCommands as circleCommands \} from [\"\']\.\/scalable[\"\'];?/g,
+        "",
+      )
+      .replace('"./spark"', '"./spark-runtime.mjs"')
       .replace("'./spark'", "'./spark-runtime.mjs'");
     fs.writeFileSync(`.tools/${out}.mjs`, code);
   }
   const { createSparkCommand } = await import("../.tools/spark-runtime.mjs"),
-    { circleCommands, joinProof } =
+    { legacyCircleCommands: circleCommands, joinProof } =
       await import("../.tools/circles-runtime.mjs");
   const [host, port] = process.env.FIRESTORE_EMULATOR_HOST.split(":");
   const env = await initializeTestEnvironment({

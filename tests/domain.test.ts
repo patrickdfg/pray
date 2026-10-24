@@ -9,7 +9,7 @@ import {
   rewardProfile,
 } from "../src/domain";
 describe("prayer and task records", () => {
-  it("enforces 200 rewards and resets at Korean midnight", () => {
+  it("allows more than 200 rewards and resets at Korean midnight", () => {
     const now = Date.parse("2026-10-21T14:59:59Z");
     const p = {
       uid: "demo",
@@ -21,7 +21,7 @@ describe("prayer and task records", () => {
     };
     const last = rewardProfile(p, 10, 2, now);
     expect(last.dailyCount).toBe(200);
-    expect(() => rewardProfile(last, 10, 2, now)).toThrow();
+    expect(rewardProfile(last, 10, 2, now).dailyCount).toBe(201);
     const tomorrow = rewardProfile(last, 10, 2, now + 1000);
     expect(tomorrow.dailyCount).toBe(1);
     expect(tomorrow.dailyDay).toBe(last.dailyDay! + 1);

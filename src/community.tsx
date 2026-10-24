@@ -1,5 +1,7 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useLayoutEffect, useState } from "react";
 import {
+  doc,
+  getDoc,
   collection,
   query,
   where,
@@ -18,12 +20,19 @@ import {
   resetEmailAccount,
 } from "./cloud";
 import { circleCommands, newTeamCode, type Circle } from "./circles";
+import { usePagedRows } from "./paging";
 export function useCircle(uid: string, id?: string) {
-  const [circle, setCircle] = useState<Circle | null>(null),
+  const [root, setRoot] = useState<any>(null),
+    [own, setOwn] = useState<any>(null),
+    [ownTeam, setOwnTeam] = useState<any>(null),
+    [extraTeams, setExtraTeams] = useState<Record<string, any>>({}),
     [pending, setPending] = useState(false),
     [ready, setReady] = useState(false);
   useEffect(() => {
-    setCircle(null);
+    setRoot(null);
+    setOwn(null);
+    setExtraTeams({});
+    setOwnTeam(null);
     setReady(false);
     setPending(false);
     if (!id || uid === "guest" || !db) return;
@@ -38,13 +47,77 @@ export function useCircle(uid: string, id?: string) {
   }, [uid, id]);
   useEffect(() => {
     if (!id || !ready || pending) return;
-    return watchDoc(
-      `circles/${id}`,
-      (v) => setCircle(v ? { id, ...v } : null),
-      () => setCircle(null),
-    );
+    return watchDoc(`circles/${id}`, setRoot, () => setRoot(null));
   }, [id, ready, pending]);
-  return { circle, pending };
+  useEffect(() => {
+    if (!id || root?.schema !== 3) return;
+    return watchDoc(`circles/${id}/members/${uid}`, setOwn, () => setOwn(null));
+  }, [id, root?.schema, uid]);
+  useEffect(() => {
+    if (!id || root?.schema !== 3 || !own?.team) return;
+    return watchDoc(
+      `circles/${id}/teamDocs/${own.team}`,
+      (t) => setOwnTeam(t ? { id: own.team, ...t } : null),
+      () => setOwnTeam(null),
+    );
+  }, [id, root?.schema, own?.team]);
+  const teams = usePagedRows(
+    db,
+    root?.schema === 3 && own && id ? `circles/${id}/teamDocs` : null,
+  );
+  const people = usePagedRows(
+    db,
+    root?.schema === 3 && own && id ? `circles/${id}/members` : null,
+  );
+  useEffect(() => {
+    const refresh = (e: Event) => {
+      if ((e as CustomEvent).detail?.circle === id) {
+        teams.refresh();
+        people.refresh();
+        const team = (e as CustomEvent).detail?.team;
+        if (team && db && id)
+          void getDoc(doc(db, `circles/${id}/teamDocs/${team}`)).then((s) => {
+            if (s.exists()) setExtraTeams((v) => ({ ...v, [team]: s.data() }));
+          });
+      }
+    };
+    window.addEventListener("pray:directory", refresh);
+    return () => window.removeEventListener("pray:directory", refresh);
+  }, [id]);
+  const circle: Circle | null = root
+    ? root.schema === 3
+      ? own
+        ? {
+            ...root,
+            id,
+            teams: {
+              ...Object.fromEntries(teams.rows.map((t) => [t.id, t])),
+              ...extraTeams,
+              ...(ownTeam ? { [ownTeam.id]: ownTeam } : {}),
+            },
+            people: {
+              ...Object.fromEntries(people.rows.map((p) => [p.id, p])),
+              [uid]: own,
+            },
+          }
+        : null
+      : { ...root, id }
+    : null;
+  return {
+    circle,
+    pending,
+    directory: {
+      teamMore: teams.more,
+      memberMore: people.more,
+      loading: teams.loading || people.loading,
+      moreTeams: teams.loadMore,
+      moreMembers: people.loadMore,
+      refresh() {
+        teams.refresh();
+        people.refresh();
+      },
+    },
+  };
 }
 export function AccountOptions({
   notify,
@@ -152,6 +225,7 @@ export function CirclePanel({
   run,
   busy,
   entries,
+  directory,
 }: {
   circle: Circle | null;
   pending: boolean;
@@ -160,6 +234,14 @@ export function CirclePanel({
   run: (f: () => Promise<void>) => Promise<void>;
   busy: boolean;
   entries: any[];
+  directory?: {
+    teamMore: boolean;
+    memberMore: boolean;
+    loading: boolean;
+    moreTeams: () => Promise<void>;
+    moreMembers: () => Promise<void>;
+    refresh: () => void;
+  };
 }) {
   const [name, setName] = useState(""),
     [code, setCode] = useState(
@@ -172,8 +254,7 @@ export function CirclePanel({
     [gateCode, setGateCode] = useState(""),
     [gatePass, setGatePass] = useState(""),
     [open, setOpen] = useState(true),
-    [approval, setApproval] = useState(false),
-    [requests, setRequests] = useState<any[]>([]);
+    [approval, setApproval] = useState(false);
   const person = circle?.people[uid],
     director = person?.role === "director",
     manager = director || person?.role === "leader";
@@ -183,34 +264,34 @@ export function CirclePanel({
       )
     : [];
   const selected = chosen || teams[0]?.[0] || "";
-  useEffect(() => {
+  useLayoutEffect(() => {
     const t = circle?.teams[selected];
     setGateCode(t?.code || newTeamCode());
     setGatePass("");
     setOpen(t?.open ?? true);
     setApproval(t?.approval ?? false);
   }, [selected, circle?.teams[selected]?.gate]);
-  useEffect(() => {
-    setRequests([]);
-    if (!circle || !manager || !db) return;
-    const base = collection(db, `circles/${circle.id}/requests`);
-    const q = director
-      ? query(base, limit(100))
-      : query(base, where("team", "==", person!.team), limit(100));
-    return onSnapshot(
-      q,
-      (s) =>
-        setRequests(
-          s.docs
-            .map((d) => ({ id: d.id, ...d.data() }))
-            .filter((r) => (r as any).status === "pending"),
-        ),
-      (e) => notify(e.message),
-    );
-  }, [circle?.id, manager, director, person?.team]);
+  const requestPage = usePagedRows(
+    db,
+    circle && manager ? `circles/${circle.id}/requests` : null,
+    director
+      ? { field: "status", value: "pending" }
+      : [
+          { field: "status", value: "pending" },
+          { field: "team", value: person?.team },
+        ],
+    (e) => notify(e.message),
+  );
+  const requests = requestPage.rows.filter((r) => r.status === "pending");
   const act = async (action: string, payload: any = {}) => {
     if (!db) throw Error("실제 참여는 서버 연결이 필요해요.");
-    return circleCommands(db, uid)(action, { circle: circle?.id, ...payload });
+    const result = await circleCommands(db, uid)(action, {
+      circle: circle?.id,
+      schema: circle?.schema || 2,
+      ...payload,
+    });
+    if (action === "approve") requestPage.refresh();
+    return result;
   };
   async function join() {
     await run(async () => {
@@ -224,7 +305,10 @@ export function CirclePanel({
         name: name || user.displayName || "숲 친구",
       });
       try {
-        await circleCommands(db!, user.uid)("admit", { circle: r.id });
+        await circleCommands(db!, user.uid)("admit", {
+          circle: r.id,
+          schema: r.schema,
+        });
         notify("팀에 참여했어요. 기도와 실천을 함께 기록해요!");
       } catch (e) {
         if ((e as any).code === "permission-denied")
@@ -239,21 +323,10 @@ export function CirclePanel({
       <h2>🌳 기도단과 우리 팀</h2>
       {!circle && !pending && (
         <>
-          <p>
-            팀원은 Google 없이 코드·참여 비밀번호·별명으로 들어올 수 있어요.
-          </p>
+          <p>팀 코드를 먼저 적고, 이름과 참여 비밀번호를 입력해 주세요.</p>
           <div className="community-grid">
             <section>
               <h3>팀 코드로 참여하기</h3>
-              <label>
-                별명
-                <input
-                  maxLength={40}
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  autoComplete="nickname"
-                />
-              </label>
               <label>
                 팀 코드
                 <input
@@ -261,6 +334,15 @@ export function CirclePanel({
                   onChange={(e) => setCode(e.target.value.toUpperCase())}
                   maxLength={16}
                   autoCapitalize="characters"
+                />
+              </label>
+              <label>
+                이름
+                <input
+                  maxLength={40}
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  autoComplete="nickname"
                 />
               </label>
               <label>
@@ -365,11 +447,33 @@ export function CirclePanel({
           <p>
             <strong>{circle.name}</strong> ·{" "}
             {director ? "단장" : person?.role === "leader" ? "팀장" : "팀원"} ·
-            전체 {Object.keys(circle.people).length}명
+            {circle.schema === 3 ? "불러온 팀원" : "전체"}{" "}
+            {Object.keys(circle.people).length}명
           </p>
+          {circle.schema !== 3 && director && (
+            <div className="hint">
+              <p>
+                기존 자료를 보존하고 인원·글 개수 제한 없는 새 저장 구조로
+                전환할 수 있어요.
+              </p>
+              <button
+                className="secondary"
+                disabled={busy}
+                onClick={() =>
+                  run(async () => {
+                    await act("migrate");
+                    notify("자료를 보존하고 새 저장 구조로 전환했어요.");
+                  })
+                }
+              >
+                새 저장 구조로 전환
+              </button>
+            </div>
+          )}
           <p className="hint">
-            단장 공통 글 → 모든 팀 · 팀 공통 글 → 해당 팀만 · 비밀 글 → 본인
-            기기만. 한 사람의 완료는 다른 사람의 기록을 끝내지 않아요.
+            횟수와 인원은 불러온 기록·팀원 기준이에요. 더 보기로 계속 불러올 수
+            있어요. 단장 공통 글 → 모든 팀 · 팀 공통 글 → 해당 팀만 · 비밀 글 →
+            본인 기기만. 한 사람의 완료는 다른 사람의 기록을 끝내지 않아요.
           </p>
           <div className="community-grid">
             {teams.map(([id, t]) => {
@@ -385,7 +489,12 @@ export function CirclePanel({
                   .reduce(
                     (n, e) =>
                       n +
-                      roster.reduce((k, [u]) => k + (e.counts?.[u] || 0), 0),
+                      (circle.schema === 3
+                        ? (e.totalCount ?? e.count ?? 0)
+                        : roster.reduce(
+                            (k, [u]) => k + (e.counts?.[u] || 0),
+                            0,
+                          )),
                     0,
                   );
               return (
@@ -393,8 +502,9 @@ export function CirclePanel({
                   <h3>{t.name}</h3>
                   <p>
                     팀장: {circle.people[t.leader]?.name || "단장"} ·{" "}
-                    {roster.length}명 · 기도 {total("prayer")}회 · 실천{" "}
-                    {total("task")}회
+                    {roster.length}명 ·{" "}
+                    {circle.schema === 3 ? "공유 글 기도" : "기도"}{" "}
+                    {total("prayer")}회 · 실천 {total("task")}회
                   </p>
                   {roster.map(([u, p]) => (
                     <div className="circle-member" key={u}>
@@ -428,6 +538,31 @@ export function CirclePanel({
               );
             })}
           </div>
+          {directory && (
+            <div className="community-inline">
+              {directory.teamMore && (
+                <button
+                  className="secondary"
+                  disabled={directory.loading}
+                  onClick={directory.moreTeams}
+                >
+                  팀 더 보기
+                </button>
+              )}
+              {directory.memberMore && (
+                <button
+                  className="secondary"
+                  disabled={directory.loading}
+                  onClick={directory.moreMembers}
+                >
+                  팀원 더 보기
+                </button>
+              )}
+              <button className="text-button" onClick={directory.refresh}>
+                목록 새로고침
+              </button>
+            </div>
+          )}
           {director && (
             <div className="community-inline">
               <label>
@@ -454,7 +589,7 @@ export function CirclePanel({
               </button>
             </div>
           )}
-          {manager && (
+          {manager && circle.teams[selected] && (
             <details>
               <summary>팀 입장 관리 · 코드와 비밀번호</summary>
               <label>
@@ -580,6 +715,15 @@ export function CirclePanel({
           현재는 체험 모드입니다. 실제 팀 코드 참여·단장 관리는 실제 앱에서
           이용해 주세요.
         </p>
+      )}
+      {manager && requestPage.more && (
+        <button
+          className="secondary"
+          disabled={requestPage.loading}
+          onClick={requestPage.loadMore}
+        >
+          참여 요청 더 보기
+        </button>
       )}
       <AccountOptions notify={notify} run={run} busy={busy} />
     </div>

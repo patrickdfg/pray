@@ -112,7 +112,17 @@ const fs = require("fs");
       .trim();
     assert.match(code, /^[A-Z0-9]{12}$/);
     await g.goto("http://127.0.0.1:5175");
-    await g.getByLabel("별명", { exact: true }).fill("민수");
+    const positions = await Promise.all(
+      ["팀 코드", "이름", "참여 비밀번호"].map((label) =>
+        g.getByLabel(label, { exact: true }).boundingBox(),
+      ),
+    );
+    assert(positions.every(Boolean));
+    assert(
+      positions[0].y < positions[1].y && positions[1].y < positions[2].y,
+      "team code, name, password vertical order",
+    );
+    await g.getByLabel("이름", { exact: true }).fill("민수");
     await g.getByLabel("팀 코드", { exact: true }).fill(code);
     await g
       .getByLabel("참여 비밀번호", { exact: true })
@@ -131,6 +141,7 @@ const fs = require("fs");
     await p.getByPlaceholder("어떤 마음을 심어 볼까요?").fill("모두의 평안");
     await p.getByLabel("공유 범위").selectOption("all");
     await p.getByRole("button", { name: "마음 심기", exact: true }).click();
+    await p.getByText("새 마음 심기 완료! 🎮", { exact: true }).waitFor();
     await g
       .locator(".bottom-nav")
       .getByRole("button", { name: "기도", exact: true })
@@ -228,6 +239,112 @@ const fs = require("fs");
       .getByRole("button", { name: "기도", exact: true })
       .click();
     await r.getByText("나는 1번", { exact: false }).waitFor();
+    const firestore = await import("firebase/firestore");
+    let cid;
+    await env.withSecurityRulesDisabled(async (c) => {
+      const admin = c.firestore(),
+        cs = await firestore.getDocs(firestore.collection(admin, "circles"));
+      assert.equal(cs.size, 1);
+      cid = cs.docs[0].id;
+      const root = cs.docs[0].data(),
+        batch = firestore.writeBatch(admin);
+      for (let i = 0; i < 105; i++)
+        batch.set(
+          firestore.doc(
+            admin,
+            "circles",
+            cid,
+            "entries",
+            "page-" + String(i).padStart(3, "0"),
+          ),
+          {
+            schema: 3,
+            title: "페이지 기도 " + i,
+            body: "",
+            kind: "prayer",
+            teamId: "all",
+            author: root.director,
+            authorName: "모험가",
+            createdAt: firestore.Timestamp.fromMillis(1000 + i),
+            count: 0,
+            participantCount: 0,
+            commentCount: 0,
+            source: "단장이 나눴어요",
+            closed: false,
+          },
+        );
+      await batch.commit();
+    });
+    await r
+      .getByRole("button", { name: "새 글 불러오기", exact: true })
+      .click();
+    await r.waitForFunction(
+      () => document.querySelectorAll(".entry").length === 20,
+    );
+    for (let expected = 40; expected <= 100; expected += 20) {
+      await r
+        .getByRole("button", { name: "기록 더 불러오기", exact: true })
+        .click();
+      await r.waitForFunction(
+        (n) => document.querySelectorAll(".entry").length === n,
+        expected,
+      );
+    }
+    await r
+      .getByRole("button", { name: "기록 더 불러오기", exact: true })
+      .click();
+    await r.waitForFunction(
+      () => document.querySelectorAll(".entry").length === 106,
+    );
+    const titles = await r.locator(".entry-title strong").allTextContents();
+    assert.equal(new Set(titles).size, 106);
+    // An offscreen record stays cached until visible; visible counters then update live.
+    const lastCard = r.locator(".entry").filter({ hasText: "페이지 기도 0" });
+    await r.evaluate(() => window.scrollTo(0, 0));
+    await env.withSecurityRulesDisabled((c) =>
+      firestore.updateDoc(
+        firestore.doc(c.firestore(), "circles", cid, "entries", "page-000"),
+        { count: 7 },
+      ),
+    );
+    assert(!(await lastCard.innerText()).includes("함께 기도 7번"));
+    await lastCard.scrollIntoViewIfNeeded();
+    await lastCard.getByText("함께 기도 7번", { exact: false }).waitFor();
+    await r.evaluate(async () => {
+      const { flagSharedError } = await import("/src/quota.ts");
+      flagSharedError({ code: "resource-exhausted" });
+    });
+    await r.getByText("공유 연결이 잠시 중단됐어요", { exact: true }).waitFor();
+    await restored.setOffline(true);
+    await r
+      .getByRole("button", { name: "이 기기에 비밀 기록하기", exact: true })
+      .click();
+    await r
+      .getByPlaceholder("어떤 마음을 심어 볼까요?")
+      .fill("한도 중에도 비밀 기록");
+    await r.getByRole("button", { name: "마음 심기", exact: true }).click();
+    await r.getByRole("button", { name: "나만의 비밀", exact: false }).click();
+    await r
+      .locator(".entry")
+      .filter({ hasText: "한도 중에도 비밀 기록" })
+      .waitFor();
+    await restored.setOffline(false);
+    await env.withSecurityRulesDisabled(async (c) => {
+      const records = await firestore.getDocs(
+        firestore.collection(c.firestore(), "circles", cid, "entries"),
+      );
+      assert.equal(records.size, 106);
+    });
+    await r.reload();
+    await r
+      .locator(".bottom-nav")
+      .getByRole("button", { name: "기도", exact: true })
+      .click();
+    await r.getByRole("button", { name: "나만의 비밀", exact: false }).click();
+    await r
+      .locator(".entry")
+      .filter({ hasText: "한도 중에도 비밀 기록" })
+      .waitFor();
     for (const width of [320, 390, 768, 1024, 1440]) {
       await p.setViewportSize({ width, height: 950 });
       if (width < 768)
@@ -259,7 +376,7 @@ const fs = require("fs");
     });
     assert.deepEqual(errors, []);
     console.log(
-      "Community UI passed: email director, Google popup and restored login, code/password anonymous admission, live shared prayer and personal counts, reload, browser restart persistence, email linking without UID/data loss, 320–1440px layout.",
+      "Community UI passed: email director, Google popup and restored login, code/password anonymous admission, live shared prayer and personal counts, reload, browser restart persistence, email linking without UID/data loss, 106 records paginated, visible-only live counters, quota/offline private recording, code/name/password order, 320–1440px layout.",
     );
   } catch (e) {
     if (browser) {

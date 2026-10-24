@@ -100,7 +100,7 @@ export function createSparkCommand(
         if (!inv.exists() || !p.exists())
           throw Error("유효하지 않은 초대예요.");
         const i = inv.data();
-        if (i.expiresAt.toMillis() <= Date.now() || i.uses >= 100)
+        if (i.expiresAt.toMillis() <= Date.now())
           throw Error("초대가 만료되었어요. 새 링크를 받아 주세요.");
         if (p.data().activeTeam === i.team) return { ok: true };
         if (p.data().activeTeam) throw Error("이미 다른 팀에 참여 중이에요.");
@@ -172,8 +172,6 @@ export function createSparkCommand(
         const t = await tx.get(teamRef),
           p = await tx.get(profileRef);
         if (!t.exists() || !p.exists()) throw Error("팀을 먼저 만들어 주세요.");
-        if (t.data().itemCount >= 100)
-          throw Error("무료 운영 버전은 팀당 씨앗 100개까지 보관해요.");
         tx.set(ref, {
           title,
           body,
@@ -220,8 +218,6 @@ export function createSparkCommand(
           p = await tx.get(profileRef);
         if (!item.exists() || !p.exists())
           throw Error("항목을 찾을 수 없어요.");
-        if (item.data().comments.length >= 100)
-          throw Error("한 항목에 감동 100개까지 남길 수 있어요.");
         tx.update(itemRef, {
           comments: [
             ...item.data().comments,
@@ -264,8 +260,6 @@ export function createSparkCommand(
         throw Error("1~5단계로 골라 주세요.");
       const day = Math.floor((Date.now() + 9 * 3600000) / 86400000),
         dailyCount = profile.dailyDay === day ? profile.dailyCount + 1 : 1;
-      if (dailyCount > 200)
-        throw Error("오늘의 기록 한도 200회에 도달했어요. 내일 다시 만나요!");
       tx.set(eventRef, { uid, kind: action, at: serverTimestamp() });
       if (action === "log") {
         tx.update(itemRef, {

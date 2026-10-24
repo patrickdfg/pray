@@ -243,7 +243,7 @@ const ts = require("typescript");
         2,
       );
     });
-    await test("Daily cap cannot be bypassed by direct writes or by resetting the profile", async () => {
+    await test("More than 200 legitimate activities allowed; forged counters and resets rejected", async () => {
       const entry = await lead("createItem", {
           team,
           title: "하루 한도 테스트",
@@ -257,9 +257,7 @@ const ts = require("typescript");
           dailyCount: 200,
         }),
       );
-      await assert.rejects(
-        friend("log", { team, id: entry.id, eventId: "cap-client" }),
-      );
+      await friend("log", { team, id: entry.id, eventId: "cap-client" });
       const p = (await getDoc(doc(f, "profiles/friend"))).data(),
         batch = writeBatch(f),
         eventId = "cap-forged";
@@ -288,36 +286,34 @@ const ts = require("typescript");
         lastEvent: { team, item: entry.id, event: eventId },
       });
       await assertFails(batch.commit());
-      assert.equal((await getDoc(doc(f, path))).data().count, 0);
+      assert.equal((await getDoc(doc(f, path))).data().count, 1);
       await assertFails(
         updateDoc(doc(f, "profiles/friend"), { dailyCount: 0 }),
       );
     });
-    await test("Team item cap is enforced", async () => {
+    await test("More than 100 items allowed; detached counter updates rejected", async () => {
       await env.withSecurityRulesDisabled(async (c) =>
         updateDoc(doc(c.firestore(), `teams/${team}`), { itemCount: 100 }),
       );
-      await assert.rejects(
-        lead("createItem", { team, title: "101번째", kind: "prayer" }),
-      );
+      await lead("createItem", { team, title: "101번째", kind: "prayer" });
       await assertFails(
         updateDoc(doc(l, `teams/${team}`), {
-          itemCount: 101,
+          itemCount: 102,
           lastItem: "forged-item",
         }),
       );
     });
-    await test("Full team and expired invitation refuse atomic join", async () => {
+    await test("More than 100 members allowed; expired invitations still rejected", async () => {
       const out = createSparkCommand(o, "outsider", "새친구");
       await out("bootstrap");
       const link = await lead("invite", { team });
       await env.withSecurityRulesDisabled(async (c) =>
         updateDoc(doc(c.firestore(), `teams/${team}`), { memberCount: 100 }),
       );
-      await assertFails(out("join", { token: link.token }));
+      await out("join", { token: link.token });
       assert.equal(
         (await getDoc(doc(o, "profiles/outsider"))).data().activeTeam,
-        "",
+        team,
       );
       await env.withSecurityRulesDisabled(async (c) =>
         updateDoc(doc(c.firestore(), `invites/${link.token}`), {

@@ -61,8 +61,12 @@ import "./room.css";
 import { CirclePanel, AccountOptions, useCircle } from "./community";
 import { circleCommands, watchCircleEntries } from "./circles";
 import "./community.css";
+import { pagedEntryFeed, usePagedRows, type EntryFeed } from "./paging";
+import { LiveEntry, Participants } from "./live-entry";
+import { flagSharedError } from "./quota";
 const uid = () => crypto.randomUUID();
 const escError = (e: unknown) => {
+  flagSharedError(e);
   const messages: Record<string, string> = {
     "auth/popup-closed-by-user": "Google 로그인을 취소했어요.",
     "auth/popup-blocked": "팝업을 허용한 뒤 Google 로그인을 다시 눌러 주세요.",
@@ -103,10 +107,25 @@ function App() {
     coins: connected ? 0 : 40,
   });
   const [legacyView, setLegacyView] = useState(false);
-  const { circle, pending: circlePending } = useCircle(
-    profile.uid,
-    profile.activeCircle,
-  );
+  const feedRef = useRef<EntryFeed | null>(null);
+  const [lastLegacyItem, setLastLegacyItem] = useState("");
+  const [feedMeta, setFeedMeta] = useState({ more: false, loading: false });
+  const [viewScope, setViewScope] = useState("all-teams");
+  const [sharingBlocked, setSharingBlocked] = useState(!navigator.onLine);
+  useEffect(() => {
+    const block = () => setSharingBlocked(true);
+    window.addEventListener("pray:sharing-unavailable", block);
+    window.addEventListener("offline", block);
+    return () => {
+      window.removeEventListener("pray:sharing-unavailable", block);
+      window.removeEventListener("offline", block);
+    };
+  }, []);
+  const {
+    circle,
+    pending: circlePending,
+    directory,
+  } = useCircle(profile.uid, profile.activeCircle);
   const useCommunity = !!circle && !legacyView;
   const [shareTeam, setShareTeam] = useState("");
   const [anonymous, setAnonymous] = useState(false);
@@ -217,41 +236,146 @@ function App() {
     const stops = [
       watchDoc(
         `teams/${team}`,
-        (t) => t && setTeamName(t.name),
+        (t) => {
+          if (t) {
+            setTeamName(t.name);
+            setLastLegacyItem(t.lastItem || "");
+          }
+        },
         (e) => notify(escError(e)),
-      ),
-      watchList(
-        `teams/${team}/items`,
-        (v) =>
-          setItems(
-            v.map((e) => {
-              const outcome = e.outcomes?.[profile.uid];
-              return {
-                ...e,
-                ...(outcome
-                  ? {
-                      rating: outcome.rating,
-                      completedAt: outcome.completedAt,
-                      count: outcome.count,
-                    }
-                  : {}),
-              };
-            }),
-          ),
-        (e) => notify(escError(e)),
-      ),
-      watchList(`teams/${team}/members`, setMembers, (e) =>
-        notify(escError(e)),
       ),
     ];
     return () => stops.forEach((s) => s());
   }, [signed, team, profile.uid, useCommunity]);
+  const legacyMembers = usePagedRows(
+    db,
+    signed && team && !useCommunity ? `teams/${team}/members` : null,
+    undefined,
+    (e) => notify(escError(e)),
+  );
   useEffect(() => {
-    if (!useCommunity || !circle || !db) return;
+    if (!useCommunity) setMembers(legacyMembers.rows);
+  }, [useCommunity, legacyMembers.rows]);
+  useEffect(() => {
+    if (
+      !db ||
+      !signed ||
+      !team ||
+      useCommunity ||
+      sharingBlocked ||
+      filter === "secret" ||
+      !["home", "prayer", "task", "archive", "stats"].includes(tab)
+    )
+      return;
+    setItems([]);
+    const f = pagedEntryFeed(
+      db,
+      "legacy-" + team,
+      profile.uid,
+      "",
+      "",
+      true,
+      (values) =>
+        setItems(
+          values.map((e) => {
+            const o = e.outcomes?.[profile.uid];
+            return {
+              ...e,
+              legacyTeam: team,
+              secret: false,
+              totalCount: e.count,
+              myCount: e.counts?.[profile.uid] || 0,
+              ...(o
+                ? {
+                    rating: o.rating,
+                    completedAt: o.completedAt,
+                    count: o.count,
+                  }
+                : {}),
+            };
+          }),
+        ),
+      setFeedMeta,
+      (e) => notify(escError(e)),
+      team,
+    );
+    feedRef.current = f;
+    return () => {
+      f.stop();
+      if (feedRef.current === f) feedRef.current = null;
+    };
+  }, [
+    signed,
+    team,
+    useCommunity,
+    sharingBlocked,
+    tab,
+    filter,
+    profile.uid,
+    lastLegacyItem,
+  ]);
+  useEffect(() => {
+    if (
+      !useCommunity ||
+      !circle ||
+      !db ||
+      sharingBlocked ||
+      filter === "secret"
+    )
+      return;
+    if (
+      circle.schema === 3 &&
+      !["home", "prayer", "task", "archive", "stats"].includes(tab)
+    )
+      return;
     setItems([]);
     setTeamName(
       circle.teams[circle.people[profile.uid]?.team]?.name || circle.name,
     );
+    const update = (values: any[]) =>
+      setItems(
+        values.map((e) => {
+          const o = e.outcomes?.[profile.uid];
+          return {
+            ...e,
+            circleId: circle.id,
+            secret: false,
+            totalCount: e.count,
+            personalCompleted: !!o,
+            lastLog: e.lastTimes?.[profile.uid],
+            myCount: e.counts?.[profile.uid] || 0,
+            ...(o
+              ? { rating: o.rating, completedAt: o.completedAt, count: o.count }
+              : {}),
+            ...(e.closed && !o
+              ? {
+                  rating: e.result,
+                  completedAt: e.closedAt,
+                  count: e.counts?.[profile.uid] || 0,
+                }
+              : {}),
+          };
+        }),
+      );
+    if (circle.schema === 3) {
+      if (!["home", "prayer", "task", "archive", "stats"].includes(tab)) return;
+      const f = pagedEntryFeed(
+        db,
+        circle.id,
+        profile.uid,
+        circle.people[profile.uid].team,
+        viewScope,
+        circle.director === profile.uid,
+        update,
+        setFeedMeta,
+        (e) => notify(escError(e)),
+      );
+      feedRef.current = f;
+      return () => {
+        f.stop();
+        if (feedRef.current === f) feedRef.current = null;
+      };
+    }
     return watchCircleEntries(
       db,
       circle,
@@ -289,17 +413,28 @@ function App() {
     );
   }, [
     useCommunity,
+    sharingBlocked,
+    circle?.schema,
+    circle?.lastEntry,
+    viewScope,
+    tab,
+    filter,
     circle?.id,
     circle?.people[profile.uid]?.team,
     circle?.people[profile.uid]?.role,
     profile.uid,
   ]);
   async function sharedCommand(action: string, payload: Record<string, any>) {
+    if (sharingBlocked)
+      throw Error(
+        "공유 연결이 잠시 중단됐어요. 비밀 기록으로 이 기기에 계속 저장할 수 있어요.",
+      );
     if (useCommunity && circle && db)
       return circleCommands(db, profile.uid)(
         action === "createItem" ? "createEntry" : action,
         {
           circle: circle.id,
+          schema: circle.schema || 2,
           name: circle.people[profile.uid]?.name || profile.name,
           teamId: shareTeam || circle.people[profile.uid]?.team,
           ...payload,
@@ -362,6 +497,19 @@ function App() {
       notify("새 소품을 구매했어요! 내 방에서 배치해 보세요 🐰");
     });
   }
+  const commentPage = usePagedRows(
+    db,
+    useCommunity && circle?.schema === 3 && selected
+      ? `circles/${circle.id}/entries/${selected}/comments`
+      : null,
+    undefined,
+    (e) => notify(escError(e)),
+    "at",
+  );
+  useEffect(() => {
+    feedRef.current?.pin(selected);
+    return () => feedRef.current?.pin(null);
+  }, [selected]);
   const all = [...items, ...secrets],
     statisticItems = all.filter((e) => !e.circleId || e.personalCompleted),
     summary = stats(statisticItems),
@@ -426,8 +574,6 @@ function App() {
   async function add() {
     await run(async () => {
       if (!draft.title.trim()) throw Error("제목을 적어 주세요.");
-      if (!draft.secret && !connected && items.length >= 100)
-        throw Error("팀당 공유 퀘스트는 100개까지 보관해요.");
       const entry: Entry = {
         id: uid(),
         ...draft,
@@ -539,8 +685,6 @@ function App() {
   async function addComment() {
     await run(async () => {
       if (!current || !comment.trim()) return;
-      if (!current.secret && current.comments.length >= 100)
-        throw Error("한 퀘스트에 댓글 100개까지 남길 수 있어요.");
       const c = {
         id: uid(),
         name: profile.name,
@@ -879,6 +1023,7 @@ function App() {
                 run={run}
                 busy={busy}
                 entries={items}
+                directory={directory}
               />
             )}
           {connected && profile.activeCircle && (
@@ -898,6 +1043,33 @@ function App() {
                   {legacyView ? "기도단 기록 보기" : "기존 팀 기록 보기"}
                 </button>
               )}
+            </div>
+          )}
+          {connected && sharingBlocked && (
+            <div className="quota-banner" role="status">
+              <strong>공유 연결이 잠시 중단됐어요</strong>
+              <p>
+                무료 한도 또는 네트워크 상태를 확인해 주세요. 비밀 기도·할 일은
+                이 기기에 계속 기록할 수 있어요. 공유 저장 완료로 표시하거나
+                자동 재전송하지 않습니다.
+              </p>
+              <button
+                className="secondary"
+                onClick={() => {
+                  setDraft({
+                    title: "",
+                    body: "",
+                    kind: "prayer",
+                    secret: true,
+                  });
+                  setModal("new");
+                }}
+              >
+                이 기기에 비밀 기록하기
+              </button>
+              <button className="text-button" onClick={() => location.reload()}>
+                공유 연결 다시 확인
+              </button>
             </div>
           )}
           <div className="page-heading">
@@ -1083,10 +1255,51 @@ function App() {
                       </button>
                     ))}
                   </div>
+                  {useCommunity &&
+                    circle?.schema === 3 &&
+                    filter !== "secret" && (
+                      <div className="feed-controls">
+                        <p>
+                          20개씩 불러옵니다. 횟수·통계·검색은 불러온 항목
+                          기준이에요.
+                        </p>
+                        {circle.director === profile.uid && (
+                          <label>
+                            보는 범위
+                            <select
+                              aria-label="보는 범위"
+                              value={viewScope}
+                              onChange={(e) => setViewScope(e.target.value)}
+                            >
+                              <option value="all-teams">모든 팀</option>
+                              <option value="all">기도단 공통</option>
+                              {Object.entries(circle.teams).map(([id, t]) => (
+                                <option key={id} value={id}>
+                                  {t.name}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        )}
+                        <button
+                          className="text-button"
+                          disabled={feedMeta.loading || sharingBlocked}
+                          onClick={() => feedRef.current?.refresh()}
+                        >
+                          새 글 불러오기
+                        </button>
+                      </div>
+                    )}
                   <div className="entry-list">
                     {shown.length ? (
                       shown.map((e) => (
-                        <article
+                        <LiveEntry
+                          id={e.id}
+                          feed={
+                            signed && (!useCommunity || circle?.schema === 3)
+                              ? feedRef.current
+                              : null
+                          }
                           className={
                             lastRecordedId === e.id
                               ? "entry just-recorded"
@@ -1129,7 +1342,8 @@ function App() {
                                   · 나는 {e.myCount}번
                                 </span>
                               )}{" "}
-                              <span>·</span> 감동 {e.comments.length}{" "}
+                              <span>·</span> 감동{" "}
+                              {e.commentCount ?? e.comments.length}{" "}
                               <ChevronRight size={12} />
                             </span>
                           </button>
@@ -1171,7 +1385,7 @@ function App() {
                               {e.rating}/5
                             </span>
                           )}
-                        </article>
+                        </LiveEntry>
                       ))
                     ) : (
                       <div className="empty">
@@ -1195,6 +1409,19 @@ function App() {
                       </div>
                     )}
                   </div>
+                  {signed &&
+                    (!useCommunity || circle?.schema === 3) &&
+                    filter !== "secret" &&
+                    !sharingBlocked &&
+                    feedMeta.more && (
+                      <button
+                        className="secondary full"
+                        disabled={feedMeta.loading || sharingBlocked}
+                        onClick={() => feedRef.current?.loadMore()}
+                      >
+                        {feedMeta.loading ? "불러오는 중…" : "기록 더 불러오기"}
+                      </button>
+                    )}
                   <div className="privacy-note">
                     <LockKeyhole size={14} />
                     <span>
@@ -1333,6 +1560,7 @@ function App() {
                   run={run}
                   busy={busy}
                   entries={items}
+                  directory={directory}
                 />
               )}
               {tab === "team" && !useCommunity && (
@@ -1369,6 +1597,15 @@ function App() {
                       </span>
                     </div>
                   ))}
+                  {legacyMembers.more && (
+                    <button
+                      className="secondary"
+                      disabled={legacyMembers.loading}
+                      onClick={legacyMembers.loadMore}
+                    >
+                      기존 팀원 더 보기
+                    </button>
+                  )}
                   {!team && (
                     <button
                       className="text-button"
@@ -1708,10 +1945,10 @@ function App() {
                   </button>
                 </div>
                 <div className="panel free-plan">
-                  <h3>함께 쓰는 숲의 한도</h3>
+                  <h3>무료로 함께 쓰는 숲</h3>
                   <p>
-                    팀원 최대 100명 · 공유 퀘스트 100개 · 항목당 댓글 100개 ·
-                    계정별 하루 보상 기록 200회(한국 자정 초기화).
+                    팀·팀원·글·댓글의 고정 개수 제한을 없앴어요. 목록은 조금씩
+                    불러오며, 빠른 연속 클릭과 중복 보상은 차단해요.
                   </p>
                   <small>
                     실제 공유는 Firebase Spark 프로젝트 연결 후 사용할 수
@@ -1832,23 +2069,35 @@ function App() {
                       <div className="community-entry-note">
                         <p>
                           내 기록 {current.myCount}회 · 참여{" "}
-                          {Object.keys(current.counts || {}).length}명 ·{" "}
+                          {current.participantCount ??
+                            Object.keys(current.counts || {}).length}
+                          명 ·{" "}
                           {current.teamId === "all"
                             ? "기도단 전체 공유"
                             : circle?.teams[current.teamId || ""]?.name}
                         </p>
-                        <details>
-                          <summary>누가 함께했나요?</summary>
-                          <ul className="participation-list">
-                            {Object.entries(current.counts || {}).map(
-                              ([id, n]) => (
-                                <li key={id}>
-                                  {circle?.people[id]?.name || "팀원"} · {n}회
-                                </li>
-                              ),
-                            )}
-                          </ul>
-                        </details>
+                        {circle?.schema === 3 ? (
+                          <Participants
+                            circle={current.circleId}
+                            item={current.id}
+                            legacy={current.counts || {}}
+                            notify={notify}
+                          />
+                        ) : (
+                          <details>
+                            <summary>누가 함께했나요?</summary>
+                            <ul className="participation-list">
+                              {Object.entries(current.counts || {}).map(
+                                ([id, n]) => (
+                                  <li key={id}>
+                                    {circle?.people[id]?.name || "팀원"} · {n}회
+                                  </li>
+                                ),
+                              )}
+                            </ul>
+                          </details>
+                        )}
+
                         {!current.closed &&
                           (current.author === profile.uid ||
                             circle?.director === profile.uid ||
@@ -1947,23 +2196,37 @@ function App() {
                     )}
                     <div className="comments">
                       <h3>
-                        마음에 남은 감동 <span>{current.comments.length}</span>
+                        마음에 남은 감동{" "}
+                        <span>
+                          {current.commentCount ?? current.comments.length}
+                        </span>
                       </h3>
-                      {current.comments.map((c) => (
-                        <div className="comment" key={c.id}>
-                          <span>🌷</span>
-                          <div>
-                            <strong>
-                              {c.name}
-                              <small>
-                                {new Date(c.at).toLocaleDateString("ko-KR")}
-                              </small>
-                            </strong>
-                            <p>{c.text}</p>
+                      {[...current.comments, ...commentPage.rows]
+                        .sort((a, b) => a.at - b.at)
+                        .map((c) => (
+                          <div className="comment" key={c.id}>
+                            <span>🌷</span>
+                            <div>
+                              <strong>
+                                {c.name}
+                                <small>
+                                  {new Date(c.at).toLocaleDateString("ko-KR")}
+                                </small>
+                              </strong>
+                              <p>{c.text}</p>
+                            </div>
                           </div>
-                        </div>
-                      ))}
-                      {!current.comments.length && (
+                        ))}
+                      {commentPage.more && (
+                        <button
+                          className="secondary"
+                          disabled={commentPage.loading}
+                          onClick={commentPage.loadMore}
+                        >
+                          댓글 더 불러오기
+                        </button>
+                      )}
+                      {!current.comments.length && !commentPage.rows.length && (
                         <p className="hint">
                           작은 감동이나 신나는 응원을 남겨 주세요.
                         </p>

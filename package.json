@@ -11,7 +11,7 @@
     "test:browser": "node tests/browser.cjs",
     "test:room": "node tests/room-browser.cjs",
     "format": "prettier --write src tests vite.config.ts",
-    "test:rules": "firebase emulators:exec --only firestore --project demo-pray-spark \"node tests/firestore.cjs && node tests/circles.cjs\"",
+    "test:rules": "firebase emulators:exec --only firestore --project demo-pray-spark \"node tests/firestore.cjs && node tests/circles.cjs && node tests/scalable.cjs\"",
     "test:community": "firebase emulators:exec --only auth,firestore --project demo-pray-spark \"node tests/community-browser.cjs\""
   },
   "dependencies": {

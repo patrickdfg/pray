@@ -23,6 +23,8 @@ export type Entry = {
   result?: number;
   totalCount?: number;
   personalCompleted?: boolean;
+  commentCount?: number;
+  participantCount?: number;
 };
 export type Person = {
   uid: string;
@@ -43,8 +45,9 @@ export type Profile = {
 export const activityDay = (now = Date.now()) =>
   Math.floor((now + 9 * 3600000) / 86400000);
 export function checkActivityLimit(profile: Profile, now = Date.now()) {
-  if (profile.dailyDay === activityDay(now) && (profile.dailyCount || 0) >= 200)
-    throw Error("오늘의 기록 한도 200회에 도달했어요. 내일 다시 만나요!");
+  // Daily totals are statistics, not an artificial activity ceiling.
+  void profile;
+  void now;
 }
 export function rewardProfile(
   profile: Profile,

@@ -27,6 +27,8 @@ export type CircleTeam = {
 };
 export type Circle = {
   id: string;
+  schema?: number;
+  lastEntry?: string;
   name: string;
   director: string;
   people: Record<string, CirclePerson>;
@@ -99,7 +101,7 @@ export function watchCircleEntries(
     fail,
   );
 }
-export function circleCommands(db: Firestore, uid: string) {
+export function legacyCircleCommands(db: Firestore, uid: string) {
   const profileRef = doc(db, "profiles", uid);
   const execute = async (
     action: string,
@@ -200,8 +202,6 @@ export function circleCommands(db: Firestore, uid: string) {
           teams = { ...v.teams },
           people = { ...v.people };
         if (action === "team") {
-          if (Object.keys(teams).length >= 20)
-            throw Error("기도단당 팀은 20개까지 만들 수 있어요.");
           teams[team] = {
             name: clean(data.name, 40),
             leader: v.director,
@@ -255,8 +255,6 @@ export function circleCommands(db: Firestore, uid: string) {
         const v = c.data(),
           person = v.people[uid];
         if (!person) throw Error("참여 승인 후 등록할 수 있어요.");
-        if (v.entryCount >= 100)
-          throw Error("기도단당 공유 항목은 100개까지 보관해요.");
         tx.set(item, {
           title: clean(data.title),
           body: typeof data.body === "string" ? data.body.trim() : "",
@@ -328,7 +326,6 @@ export function circleCommands(db: Firestore, uid: string) {
       if (v.closed || v.outcomes[uid]) throw Error("이미 마무리한 기록이에요.");
       const day = Math.floor((Date.now() + 32400000) / 86400000),
         n = pv.dailyDay === day ? pv.dailyCount + 1 : 1;
-      if (n > 200) throw Error("오늘의 기록 한도 200회에 도달했어요.");
       tx.set(eventRef, { uid, kind: action, at: serverTimestamp() });
       if (action === "log")
         tx.update(itemRef, {
@@ -378,3 +375,5 @@ export function circleCommands(db: Firestore, uid: string) {
 }
 import { Timestamp } from "firebase/firestore";
 const TimestampNow = () => Timestamp.now();
+
+export { scalableCommands as circleCommands } from "./scalable";
