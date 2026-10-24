@@ -123,8 +123,8 @@ const fs = require("fs"),
     await assertFails(bc("admit", { circle, schema: 3 }));
     await dc("approve", { circle, schema: 3, uid: "leader2" });
     await dc("promote", { circle, schema: 3, team: t2, uid: "leader2" });
-    await test("Team leaders cannot create teams, alter another team or self-promote guests", async () => {
-      await assertFails(bc("team", { circle, schema: 3, name: "forged" }));
+    await test("Members create their own teams but cannot alter other teams or forge roles", async () => {
+      await bc("team", { circle, schema: 3, name: "내가 만든 팀" });
       await assert.rejects(
         ac("promote", { circle, schema: 3, team, uid: "guest" }),
       );
@@ -167,6 +167,138 @@ const fs = require("fs"),
             limit(20),
           ),
         ),
+      );
+    });
+    await test("A member creates a child team, admits a teammate, and that teammate creates another team without leaving the parent", async () => {
+      const { team: child } = await ac("team", {
+        circle,
+        schema: 3,
+        name: "민수의 팀",
+      });
+      const childDoc = (
+        await getDoc(doc(a, "circles", circle, "teamDocs", child))
+      ).data();
+      assert.equal(childDoc.leader, "guest");
+      assert.equal(childDoc.parentTeam, team);
+      assert.equal(
+        (await getDoc(doc(a, "circles", circle, "members", "guest"))).data()
+          .team,
+        team,
+      );
+      await ac("gate", {
+        circle,
+        schema: 3,
+        team: child,
+        code: "CHILD1234567",
+        password,
+        open: true,
+        approval: true,
+      });
+      const n = db("new-friend", "anonymous"),
+        nc = scalableCommands(n, "new-friend");
+      await createSparkCommand(
+        n,
+        "new-friend",
+        "친구",
+      )("bootstrap", { accountKind: "guest" });
+      await nc("join", { code: "CHILD1234567", password, name: "친구" });
+      await assertFails(nc("admit", { circle, schema: 3 }));
+      await ac("approve", { circle, schema: 3, uid: "new-friend" });
+      const { id: childPrayer } = await ac("createEntry", {
+        circle,
+        schema: 3,
+        teamId: child,
+        title: "우리 작은 팀",
+        body: "",
+        kind: "prayer",
+      });
+      assert.equal(
+        (await getDoc(doc(n, "circles", circle, "entries", childPrayer))).data()
+          .source,
+        "팀장이 나눴어요",
+      );
+      await assertFails(
+        getDoc(doc(b, "circles", circle, "entries", childPrayer)),
+      );
+      await assertFails(
+        updateDoc(doc(n, "circles", circle, "teamDocs", child), {
+          parentTeam: t2,
+        }),
+      );
+      const { team: grandchild } = await nc("team", {
+        circle,
+        schema: 3,
+        name: "친구의 팀",
+      });
+      assert.equal(
+        (await getDoc(doc(n, "circles", circle, "teamDocs", grandchild))).data()
+          .parentTeam,
+        child,
+      );
+      const { id: grandPrayer } = await nc("createEntry", {
+        circle,
+        schema: 3,
+        teamId: grandchild,
+        title: "세 번째 팀",
+        body: "",
+        kind: "task",
+      });
+      await assertFails(
+        getDoc(doc(a, "circles", circle, "entries", grandPrayer)),
+      );
+      await getDoc(doc(d, "circles", circle, "entries", grandPrayer));
+      await assertFails(
+        setDoc(doc(n, "circles", circle, "teamDocs", "forged-parent"), {
+          name: "위조",
+          leader: "new-friend",
+          parentTeam: t2,
+          code: "",
+          gate: "",
+          open: false,
+          approval: false,
+        }),
+      );
+      const scoped = await getDocs(
+        query(
+          collection(a, "circles", circle, "entries"),
+          where("teamId", "in", ["all", child]),
+          orderBy("createdAt", "desc"),
+          limit(20),
+        ),
+      );
+      assert(scoped.docs.some((x) => x.id === childPrayer));
+      const linked = db("new-friend", "password");
+      await createSparkCommand(
+        linked,
+        "new-friend",
+        "친구",
+      )("bootstrap", { accountKind: "permanent" });
+      await dc("promote", {
+        circle,
+        schema: 3,
+        team: child,
+        uid: "new-friend",
+      });
+      assert.equal(
+        (await getDoc(doc(a, "circles", circle, "members", "guest"))).data()
+          .team,
+        team,
+      );
+      assert.equal(
+        (await getDoc(doc(a, "circles", circle, "members", "guest"))).data()
+          .role,
+        "member",
+      );
+      await assertFails(
+        ac("gate", {
+          circle,
+          schema: 3,
+          team: child,
+          code: "CHILD1234567",
+          password,
+          open: true,
+          approval: false,
+        }),
       );
     });
     const { id: item } = await dc("createEntry", {

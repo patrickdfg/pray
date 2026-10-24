@@ -174,11 +174,12 @@ export function scalableCommands(db: Firestore, uid: string) {
       const team = crypto.randomUUID(),
         r = doc(ref, "teamDocs", team);
       await runTransaction(db, async (tx) => {
-        const c = await tx.get(ref);
-        if (!c.exists()) throw Error("기도단을 찾지 못했어요.");
+        const m = await tx.get(doc(ref, "members", uid));
+        if (!m.exists()) throw Error("팀에 참여한 뒤 내 팀을 만들 수 있어요.");
         tx.set(r, {
           name: text(data.name, 40),
-          leader: c.data().director,
+          leader: uid,
+          parentTeam: m.data().team,
           code: "",
           gate: "",
           open: false,
@@ -232,8 +233,15 @@ export function scalableCommands(db: Firestore, uid: string) {
           )
             throw Error("해당 팀원을 선택해 주세요.");
           const old = t.data().leader;
+          const oldPerson =
+            old !== target ? await tx.get(doc(ref, "members", old)) : null;
           tx.update(mr, { role: "leader" });
-          if (old !== c.data().director && old !== target)
+          if (
+            old !== c.data().director &&
+            old !== target &&
+            oldPerson?.data()?.team === team &&
+            oldPerson?.data()?.role === "leader"
+          )
             tx.update(doc(ref, "members", old), { role: "member" });
           tx.update(tr, { leader: target });
         });
@@ -253,6 +261,9 @@ export function scalableCommands(db: Firestore, uid: string) {
         const m = await tx.get(doc(ref, "members", uid));
         if (!m.exists()) throw Error("참여 승인 후 등록할 수 있어요.");
         const p = m.data();
+        const target = data.teamId || p.team;
+        const targetTeam =
+          target !== "all" ? await tx.get(doc(ref, "teamDocs", target)) : null;
         tx.set(er, {
           schema: 3,
           title: text(data.title),
@@ -260,7 +271,7 @@ export function scalableCommands(db: Firestore, uid: string) {
           kind: data.kind,
           author: uid,
           authorName: p.name,
-          teamId: data.teamId || p.team,
+          teamId: target,
           createdAt: serverTimestamp(),
           count: 0,
           participantCount: 0,
@@ -268,7 +279,7 @@ export function scalableCommands(db: Firestore, uid: string) {
           source:
             p.role === "director"
               ? "단장이 나눴어요"
-              : p.role === "leader"
+              : targetTeam?.data()?.leader === uid
                 ? "팀장이 나눴어요"
                 : "팀원이 나눴어요",
           closed: false,

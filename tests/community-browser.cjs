@@ -77,9 +77,8 @@ const fs = require("fs");
       .locator(".mode")
       .filter({ hasText: "함께하는 숲" })
       .waitFor({ state: "attached" });
-    await p.getByLabel("기도단 이름", { exact: true }).fill("테스트 기도단");
-    await p.getByLabel("첫 팀 이름", { exact: true }).fill("하나팀");
-    await p.getByRole("button", { name: "기도단 만들기", exact: true }).click();
+    await p.getByLabel("팀 이름", { exact: true }).fill("하나팀");
+    await p.getByRole("button", { name: "내 팀 만들기", exact: true }).click();
     await p
       .locator("aside nav")
       .getByRole("button", { name: "우리 팀", exact: true })
@@ -104,6 +103,7 @@ const fs = require("fs");
       .waitFor();
     const code = (
       await p
+        .locator(".team-gate")
         .getByText("팀 코드:", { exact: false })
         .filter({ has: p.locator("strong") })
         .innerText()
@@ -192,6 +192,15 @@ const fs = require("fs");
       .locator(".mode")
       .filter({ hasText: "함께하는 숲" })
       .waitFor({ state: "attached" });
+    await googlePage
+      .getByRole("button", { name: "로그인한 사용자 구글친구", exact: true })
+      .waitFor();
+    assert.equal(
+      await googlePage
+        .getByRole("button", { name: "Google로 가입·로그인", exact: true })
+        .count(),
+      0,
+    );
     await googlePage.reload();
     await googlePage
       .locator(".mode")
@@ -239,6 +248,73 @@ const fs = require("fs");
       .getByRole("button", { name: "기도", exact: true })
       .click();
     await r.getByText("나는 1번", { exact: false }).waitFor();
+    await r
+      .locator(".bottom-nav")
+      .getByRole("button", { name: "우리 팀", exact: true })
+      .click();
+    await r
+      .getByLabel("새로 만들 내 팀 이름", { exact: true })
+      .fill("민수의 작은 팀");
+    await r.getByRole("button", { name: "내 팀 추가", exact: true }).click();
+    await r
+      .getByText("팀 입장 관리 · 코드와 비밀번호", { exact: true })
+      .click();
+    await r
+      .getByLabel("관리할 팀", { exact: true })
+      .selectOption({ label: "민수의 작은 팀" });
+    await r
+      .getByLabel("새 참여 비밀번호", { exact: true })
+      .fill("Child-team-password!");
+    await r.getByText("신규 참여 허용", { exact: true }).click();
+    await r
+      .getByRole("button", {
+        name: "참여 비밀번호와 입장 설정 저장",
+        exact: true,
+      })
+      .click();
+    await r
+      .getByText("입장 설정을 저장했어요. 기존 팀원의 소속은 유지돼요.", {
+        exact: true,
+      })
+      .waitFor();
+    const childCode = (await r.locator(".team-gate strong").innerText()).trim();
+    assert.match(childCode, /^[A-Z0-9]{12}$/);
+    const friendContext = await browser.newContext({
+        viewport: { width: 390, height: 844 },
+      }),
+      friendPage = await friendContext.newPage();
+    await friendPage.goto("http://127.0.0.1:5175");
+    await friendPage.getByLabel("팀 코드", { exact: true }).fill(childCode);
+    await friendPage.getByLabel("이름", { exact: true }).fill("작은팀 친구");
+    await friendPage
+      .getByLabel("참여 비밀번호", { exact: true })
+      .fill("Child-team-password!");
+    await friendPage
+      .getByRole("button", { name: "별명으로 팀 참여", exact: true })
+      .click();
+    await friendPage
+      .getByText("팀에 참여했어요. 기도와 실천을 함께 기록해요!", {
+        exact: true,
+      })
+      .waitFor();
+    await friendPage
+      .locator(".bottom-nav")
+      .getByRole("button", { name: "우리 팀", exact: true })
+      .click();
+    await friendPage
+      .getByLabel("새로 만들 내 팀 이름", { exact: true })
+      .fill("친구가 만든 팀");
+    await friendPage
+      .getByRole("button", { name: "내 팀 추가", exact: true })
+      .click();
+    await friendPage
+      .getByText("팀 입장 관리 · 코드와 비밀번호", { exact: true })
+      .waitFor();
+    await friendContext.close();
+    await r
+      .locator(".bottom-nav")
+      .getByRole("button", { name: "기도", exact: true })
+      .click();
     const firestore = await import("firebase/firestore");
     let cid;
     await env.withSecurityRulesDisabled(async (c) => {

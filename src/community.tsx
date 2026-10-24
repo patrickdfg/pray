@@ -65,6 +65,11 @@ export function useCircle(uid: string, id?: string) {
     db,
     root?.schema === 3 && own && id ? `circles/${id}/teamDocs` : null,
   );
+  const managed = usePagedRows(
+    db,
+    root?.schema === 3 && own && id ? `circles/${id}/teamDocs` : null,
+    { field: "leader", value: uid },
+  );
   const people = usePagedRows(
     db,
     root?.schema === 3 && own && id ? `circles/${id}/members` : null,
@@ -73,6 +78,7 @@ export function useCircle(uid: string, id?: string) {
     const refresh = (e: Event) => {
       if ((e as CustomEvent).detail?.circle === id) {
         teams.refresh();
+        managed.refresh();
         people.refresh();
         const team = (e as CustomEvent).detail?.team;
         if (team && db && id)
@@ -92,6 +98,7 @@ export function useCircle(uid: string, id?: string) {
             id,
             teams: {
               ...Object.fromEntries(teams.rows.map((t) => [t.id, t])),
+              ...Object.fromEntries(managed.rows.map((t) => [t.id, t])),
               ...extraTeams,
               ...(ownTeam ? { [ownTeam.id]: ownTeam } : {}),
             },
@@ -107,10 +114,15 @@ export function useCircle(uid: string, id?: string) {
     circle,
     pending,
     directory: {
-      teamMore: teams.more,
+      teamMore: teams.more || managed.more,
       memberMore: people.more,
-      loading: teams.loading || people.loading,
-      moreTeams: teams.loadMore,
+      loading: teams.loading || people.loading || managed.loading,
+      moreTeams: async () => {
+        await Promise.all([
+          teams.more ? teams.loadMore() : Promise.resolve(),
+          managed.more ? managed.loadMore() : Promise.resolve(),
+        ]);
+      },
       moreMembers: people.loadMore,
       refresh() {
         teams.refresh();
@@ -248,22 +260,24 @@ export function CirclePanel({
       new URLSearchParams(location.search).get("teamCode") || "",
     ),
     [password, setPassword] = useState(""),
-    [circleName, setCircleName] = useState(""),
     [teamName, setTeamName] = useState(""),
     [chosen, setChosen] = useState(""),
     [gateCode, setGateCode] = useState(""),
     [gatePass, setGatePass] = useState(""),
     [open, setOpen] = useState(true),
     [approval, setApproval] = useState(false);
-  const person = circle?.people[uid],
-    director = person?.role === "director",
-    manager = director || person?.role === "leader";
+  const person = circle?.people[uid];
+  const director = person?.role === "director";
   const teams = circle
     ? Object.entries(circle.teams).filter(
-        ([id]) => director || id === person?.team,
+        ([id, t]) => director || id === person?.team || t.leader === uid,
       )
     : [];
-  const selected = chosen || teams[0]?.[0] || "";
+  const managedTeams = teams.filter(([, t]) => director || t.leader === uid);
+  const selected = managedTeams.some(([id]) => id === chosen)
+    ? chosen
+    : managedTeams[0]?.[0] || "";
+  const manager = !!selected;
   useLayoutEffect(() => {
     const t = circle?.teams[selected];
     setGateCode(t?.code || newTeamCode());
@@ -278,7 +292,7 @@ export function CirclePanel({
       ? { field: "status", value: "pending" }
       : [
           { field: "status", value: "pending" },
-          { field: "team", value: person?.team },
+          { field: "team", value: selected },
         ],
     (e) => notify(e.message),
   );
@@ -368,20 +382,13 @@ export function CirclePanel({
               </p>
             </section>
             <section>
-              <h3>단장으로 시작하기</h3>
+              <h3>팀장으로 시작하기</h3>
               <p>
-                단장은 Google 또는 이메일 계정으로 기도단과 여러 팀을 관리해요.
+                내 팀을 먼저 만들면 자동으로 단장이 돼요. 팀원도 자기 팀을
+                만들어 친구를 데려올 수 있어요.
               </p>
               <label>
-                기도단 이름
-                <input
-                  value={circleName}
-                  onChange={(e) => setCircleName(e.target.value)}
-                  maxLength={40}
-                />
-              </label>
-              <label>
-                첫 팀 이름
+                팀 이름
                 <input
                   value={teamName}
                   onChange={(e) => setTeamName(e.target.value)}
@@ -398,14 +405,17 @@ export function CirclePanel({
                         "먼저 Google 또는 이메일 계정을 연결해 주세요.",
                       );
                     await command("bootstrap");
-                    await act("create", { name: circleName, teamName });
+                    await act("create", {
+                      name: teamName,
+                      teamName,
+                    });
                     notify(
-                      "기도단을 만들었어요. 팀 참여 비밀번호를 설정해 주세요.",
+                      "팀을 만들었어요. 첫 팀장인 내가 자동으로 단장이 됐어요.",
                     );
                   })
                 }
               >
-                기도단 만들기
+                내 팀 만들기
               </button>
             </section>
           </div>
@@ -446,7 +456,7 @@ export function CirclePanel({
         <>
           <p>
             <strong>{circle.name}</strong> ·{" "}
-            {director ? "단장" : person?.role === "leader" ? "팀장" : "팀원"} ·
+            {director ? "단장 (첫 팀장)" : manager ? "팀장" : "팀원"} ·
             {circle.schema === 3 ? "불러온 팀원" : "전체"}{" "}
             {Object.keys(circle.people).length}명
           </p>
@@ -500,8 +510,24 @@ export function CirclePanel({
               return (
                 <section key={id}>
                   <h3>{t.name}</h3>
+                  {t.parentTeam && (
+                    <small>
+                      함께 시작한 팀:{" "}
+                      {circle.teams[t.parentTeam]?.name || "상위 팀"}
+                    </small>
+                  )}
+                  {t.code && (
+                    <p>
+                      우리 팀 코드: <strong>{t.code}</strong>
+                      <br />
+                      <small>
+                        친구에게 이 코드와 참여 비밀번호를 알려주면 같은 팀에
+                        참여할 수 있어요.
+                      </small>
+                    </p>
+                  )}
                   <p>
-                    팀장: {circle.people[t.leader]?.name || "단장"} ·{" "}
+                    팀장: {circle.people[t.leader]?.name || "팀장"} ·{" "}
                     {roster.length}명 ·{" "}
                     {circle.schema === 3 ? "공유 글 기도" : "기도"}{" "}
                     {total("prayer")}회 · 실천 {total("task")}회
@@ -563,10 +589,10 @@ export function CirclePanel({
               </button>
             </div>
           )}
-          {director && (
+          {(director || circle.schema === 3) && (
             <div className="community-inline">
               <label>
-                추가할 팀 이름
+                새로 만들 내 팀 이름
                 <input
                   value={teamName}
                   maxLength={40}
@@ -585,20 +611,21 @@ export function CirclePanel({
                   })
                 }
               >
-                팀 추가
+                내 팀 추가
               </button>
             </div>
           )}
           {manager && circle.teams[selected] && (
-            <details>
+            <details className="team-gate">
               <summary>팀 입장 관리 · 코드와 비밀번호</summary>
               <label>
                 관리할 팀
                 <select
+                  aria-label="관리할 팀"
                   value={selected}
                   onChange={(e) => setChosen(e.target.value)}
                 >
-                  {teams.map(([id, t]) => (
+                  {managedTeams.map(([id, t]) => (
                     <option key={id} value={id}>
                       {t.name}
                     </option>

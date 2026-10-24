@@ -913,6 +913,15 @@ function App() {
                 <span className="google-short">Google로 시작</span>
               </button>
             )}
+            {signed && (
+              <button
+                className="header-account"
+                aria-label={`로그인한 사용자 ${sessionUser()?.displayName || profile.name}`}
+                onClick={() => setModal("setup")}
+              >
+                {sessionUser()?.displayName || profile.name}님
+              </button>
+            )}
             <span className="mode">
               {connected
                 ? signed
@@ -1268,7 +1277,10 @@ function App() {
                           20개씩 불러옵니다. 횟수·통계·검색은 불러온 항목
                           기준이에요.
                         </p>
-                        {circle.director === profile.uid && (
+                        {(circle.director === profile.uid ||
+                          Object.values(circle.teams).some(
+                            (t) => t.leader === profile.uid,
+                          )) && (
                           <label>
                             보는 범위
                             <select
@@ -1276,13 +1288,24 @@ function App() {
                               value={viewScope}
                               onChange={(e) => setViewScope(e.target.value)}
                             >
-                              <option value="all-teams">모든 팀</option>
+                              {circle.director === profile.uid ? (
+                                <option value="all-teams">모든 팀</option>
+                              ) : (
+                                <option value="all-teams">내 소속 팀</option>
+                              )}
                               <option value="all">기도단 공통</option>
-                              {Object.entries(circle.teams).map(([id, t]) => (
-                                <option key={id} value={id}>
-                                  {t.name}
-                                </option>
-                              ))}
+                              {Object.entries(circle.teams)
+                                .filter(
+                                  ([id, t]) =>
+                                    circle.director === profile.uid ||
+                                    id === circle.people[profile.uid]?.team ||
+                                    t.leader === profile.uid,
+                                )
+                                .map(([id, t]) => (
+                                  <option key={id} value={id}>
+                                    {t.name}
+                                  </option>
+                                ))}
                             </select>
                           </label>
                         )}
@@ -1798,8 +1821,9 @@ function App() {
                       )}
                       {Object.entries(circle?.teams || {})
                         .filter(
-                          ([id]) =>
+                          ([id, t]) =>
                             circle?.director === profile.uid ||
+                            t.leader === profile.uid ||
                             id === circle?.people[profile.uid]?.team,
                         )
                         .map(([id, t]) => (

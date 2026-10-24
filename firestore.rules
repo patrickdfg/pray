@@ -169,9 +169,9 @@ service cloud.firestore {
   }
   function circleData(id) { return get(/databases/$(database)/documents/circles/$(id)).data; }
   function circleMember(id) { return signed() && (circleData(id).get('schema',2) == 3 ? exists(/databases/$(database)/documents/circles/$(id)/members/$(me())) : me() in circleData(id).people); }
-  function circleManager(id,team) { let c=circleData(id); return permanent() && (c.director == me() || (c.get('schema',2) == 3 ? get(/databases/$(database)/documents/circles/$(id)/teamDocs/$(team)).data.leader == me() : c.teams[team].leader == me())); }
+  function circleManager(id,team) { let c=circleData(id); return c.get('schema',2) == 3 ? circleMember(id) && (c.director == me() || get(/databases/$(database)/documents/circles/$(id)/teamDocs/$(team)).data.leader == me()) : permanent() && (c.director == me() || c.teams[team].leader == me()); }
   function circlePerson(id,uid) { let c=circleData(id); return c.get('schema',2) == 3 ? get(/databases/$(database)/documents/circles/$(id)/members/$(uid)).data : c.people[uid]; }
-  function circleCanRead(id,team) { let c=circleData(id); return circleMember(id) && (c.director == me() || team == 'all' || team == circlePerson(id,me()).team); }
+  function circleCanRead(id,team) { let c=circleData(id); return circleMember(id) && (c.director == me() || team == 'all' || team == circlePerson(id,me()).team || (c.get('schema',2) == 3 && circleManager(id,team))); }
   function circleEvent(id,item,event,kind) {
    let path=/databases/$(database)/documents/circles/$(id)/entries/$(item)/events/$(event);
    return validKey(event) && !exists(path) && getAfter(path).data == {'uid':me(),'kind':kind,'at':request.time};
@@ -345,10 +345,10 @@ service cloud.firestore {
    match /teamDocs/{team} {
     allow get: if circleMember(circle) || (signed() && exists(/databases/$(database)/documents/circles/$(circle)/requests/$(me())) && get(/databases/$(database)/documents/circles/$(circle)/requests/$(me())).data.team == team);
     allow list: if circleMember(circle) && request.query.limit<=20;
-    allow create: if permanent() && request.resource.data.keys().hasOnly(['name','leader','code','gate','open','approval'])
+    allow create: if signed() && request.resource.data.keys().hasOnly(['name','leader','code','gate','open','approval','parentTeam'])
      && ((request.resource.data.name is string && request.resource.data.name.size()>0 && request.resource.data.name.size()<=40
        && request.resource.data.leader == me() && request.resource.data.code == '' && request.resource.data.gate == '' && !request.resource.data.open && !request.resource.data.approval
-       && ((!exists(/databases/$(database)/documents/circles/$(circle)) && getAfter(/databases/$(database)/documents/circles/$(circle)).data.director == me()) || director3(circle)))
+       && ((!exists(/databases/$(database)/documents/circles/$(circle)) && permanent() && getAfter(/databases/$(database)/documents/circles/$(circle)).data.director == me()) || (v3(circle) && circleMember(circle) && request.resource.data.parentTeam == member3(circle,me()).team)))
       || (migration3(circle) && request.resource.data == circleData(circle).teams[team]));
     allow update: if (migration3(circle) && request.resource.data == circleData(circle).teams[team]) || (v3(circle) && circleManager(circle,team)
      && ((request.resource.data.diff(resource.data).affectedKeys().hasOnly(['gate','code','open','approval']) && request.resource.data.open is bool && request.resource.data.approval is bool
@@ -358,7 +358,7 @@ service cloud.firestore {
        && request.resource.data.leader != circleData(circle).director && member3(circle,request.resource.data.leader).team == team
        && get(/databases/$(database)/documents/profiles/$(request.resource.data.leader)).data.get('accountKind','permanent') == 'permanent'
        && getAfter(/databases/$(database)/documents/circles/$(circle)/members/$(request.resource.data.leader)).data.role == 'leader'
-       && (resource.data.leader == circleData(circle).director || getAfter(/databases/$(database)/documents/circles/$(circle)/members/$(resource.data.leader)).data.role == 'member'))));
+       && (resource.data.leader == circleData(circle).director || member3(circle,resource.data.leader).team != team || getAfter(/databases/$(database)/documents/circles/$(circle)/members/$(resource.data.leader)).data.role == 'member'))));
    }
    match /requests/{uid} {
     allow create: if v3(circle) && signed() && uid == me() && request.resource.data.keys().hasOnly(['uid','name','team','proof','createdAt','status'])
@@ -371,9 +371,9 @@ service cloud.firestore {
    match /entries/{item} {
     allow create: if v3(circle) && circleMember(circle) && request.resource.data.keys().hasOnly(['schema','title','body','kind','author','authorName','teamId','createdAt','count','participantCount','commentCount','source','closed'])
      && request.resource.data.schema == 3 && content3(request.resource.data) && request.resource.data.author == me() && request.resource.data.authorName == member3(circle,me()).name
-     && (request.resource.data.teamId == member3(circle,me()).team || (director3(circle) && (request.resource.data.teamId == 'all' || exists(/databases/$(database)/documents/circles/$(circle)/teamDocs/$(request.resource.data.teamId)))))
+     && (request.resource.data.teamId == member3(circle,me()).team || (request.resource.data.teamId != 'all' && circleManager(circle,request.resource.data.teamId)) || (director3(circle) && request.resource.data.teamId == 'all'))
      && request.resource.data.createdAt == request.time && request.resource.data.count == 0 && request.resource.data.participantCount == 0 && request.resource.data.commentCount == 0 && request.resource.data.closed == false
-     && request.resource.data.source == (director3(circle) ? '단장이 나눴어요' : member3(circle,me()).role == 'leader' ? '팀장이 나눴어요' : '팀원이 나눴어요')
+     && request.resource.data.source == (director3(circle) ? '단장이 나눴어요' : circleManager(circle,request.resource.data.teamId) ? '팀장이 나눴어요' : '팀원이 나눴어요')
      && getAfter(/databases/$(database)/documents/circles/$(circle)).data.lastEntry == item;
     function content3(p) {return p.title is string && p.title.matches('.*[^\\s].*') && p.title.size()<=100 && p.body is string && p.body.size()<=3000 && p.kind in ['prayer','task'];}
     allow update: if v3(circle) && circleCanRead(circle,resource.data.teamId) && (edit3() || record3() || comment3() || close3());

@@ -242,7 +242,16 @@ export function pagedEntryFeed(
               scope === "all" ? ["all"] : ["all", scope || team],
             ),
           );
-      } else filters.push(where("teamId", "in", ["all", team]));
+      } else
+        filters.push(
+          where(
+            "teamId",
+            "in",
+            scope === "all"
+              ? ["all"]
+              : ["all", scope && scope !== "all-teams" ? scope : team],
+          ),
+        );
       filters.push(orderBy("createdAt", "desc"));
       if (!reset && cursor) filters.push(startAfter(cursor));
       filters.push(limit(PAGE_SIZE));

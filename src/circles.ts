@@ -18,6 +18,7 @@ export type CirclePerson = {
   role: "member" | "leader" | "director";
 };
 export type CircleTeam = {
+  parentTeam?: string;
   name: string;
   leader: string;
   code: string;
