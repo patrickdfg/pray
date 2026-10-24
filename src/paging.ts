@@ -134,6 +134,7 @@ export function pagedEntryFeed(
   meta: (v: { more: boolean; loading: boolean }) => void,
   fail: (e: Error) => void,
   legacyTeam?: string,
+  joinedTeams: string[] = [],
 ): EntryFeed {
   const entriesPath = legacyTeam
     ? `teams/${legacyTeam}/items`
@@ -242,16 +243,15 @@ export function pagedEntryFeed(
               scope === "all" ? ["all"] : ["all", scope || team],
             ),
           );
-      } else
-        filters.push(
-          where(
-            "teamId",
-            "in",
-            scope === "all"
-              ? ["all"]
-              : ["all", scope && scope !== "all-teams" ? scope : team],
-          ),
-        );
+      } else {
+        const visible =
+          scope === "all"
+            ? ["all"]
+            : scope === "all-teams"
+              ? ["all", ...Array.from(new Set([team, ...joinedTeams])).filter(Boolean).slice(0, 29)]
+              : ["all", scope || team];
+        filters.push(where("teamId", "in", visible));
+      }
       filters.push(orderBy("createdAt", "desc"));
       if (!reset && cursor) filters.push(startAfter(cursor));
       filters.push(limit(PAGE_SIZE));
