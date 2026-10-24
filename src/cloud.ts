@@ -32,8 +32,14 @@ import {
 } from "firebase/firestore";
 import { createSparkCommand, normalize } from "./spark";
 const env = import.meta.env;
+// Sample records are available only for isolated local development tests.
+// Published sites always use the real Firebase connection, even with ?demo=1.
+export const localDemo =
+  import.meta.env.DEV &&
+  /^(localhost|127\.0\.0\.1)$/.test(location.hostname) &&
+  new URLSearchParams(location.search).has("demo");
 export const connected =
-  !new URLSearchParams(location.search).has("demo") &&
+  !localDemo &&
   !!(
     env.VITE_FIREBASE_API_KEY &&
     env.VITE_FIREBASE_PROJECT_ID &&
