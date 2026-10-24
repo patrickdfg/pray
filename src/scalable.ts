@@ -6,6 +6,7 @@ import {
   query,
   where,
   limit,
+  startAfter,
   runTransaction,
   serverTimestamp,
   Timestamp,
@@ -264,19 +265,29 @@ export function scalableCommands(db: Firestore, uid: string) {
         // Check both legacy primary memberships and expanded memberships.
         // Records and the team document are preserved for recovery.
         const members = collection(ref, "members");
-        const [primary, expanded] = await Promise.all([
-          getDocs(query(members, where("team", "==", team), limit(20))),
-          getDocs(query(members, where("teams", "array-contains", team), limit(20))),
-        ]);
         const teamDoc = await getDoc(tr);
         if (!teamDoc.exists()) throw Error("팀을 찾지 못했어요.");
-        const other = [...primary.docs, ...expanded.docs].some(
-          (member) =>
-            member.id !== teamDoc.data().leader &&
-            (member.data().teams ?? [member.data().team]).includes(team),
-        );
-        if (other)
-          throw Error("팀원을 먼저 모두 해지해야 팀을 삭제할 수 있어요.");
+        // Scan every page: a first-page-only check could miss members past row 20.
+        for (const filter of [
+          where("team", "==", team),
+          where("teams", "array-contains", team),
+        ]) {
+          let cursor: any = null;
+          for (;;) {
+            const page = await getDocs(
+              query(members, filter, ...(cursor ? [startAfter(cursor)] : []), limit(20)),
+            );
+            if (
+              page.docs.some(
+                (member) =>
+                  member.id !== teamDoc.data().leader &&
+                  (member.data().teams ?? [member.data().team]).includes(team),
+              )
+            ) throw Error("팀원을 먼저 모두 해지해야 팀을 삭제할 수 있어요.");
+            if (page.size < 20) break;
+            cursor = page.docs[page.docs.length - 1];
+          }
+        }
       }
       await runTransaction(db, async (tx) => {
         const c = await tx.get(ref),
