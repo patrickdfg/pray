@@ -65,6 +65,7 @@ import { pagedEntryFeed, usePagedRows, type EntryFeed } from "./paging";
 import { LiveEntry, Participants } from "./live-entry";
 import { flagSharedError } from "./quota";
 const uid = () => crypto.randomUUID();
+const demoPreview = new URLSearchParams(location.search).has("demo");
 const escError = (e: unknown) => {
   flagSharedError(e);
   const messages: Record<string, string> = {
@@ -752,6 +753,22 @@ function App() {
       setInvite(`${location.origin}${location.pathname}?invite=${r.token}`);
     });
   }
+  function startGoogleLogin() {
+    if (demoPreview) {
+      // Do not discard local demo records; leave preview mode only in the URL.
+      const url = new URL(location.href);
+      url.searchParams.delete("demo");
+      location.assign(url.href);
+      return;
+    }
+    if (!connected) {
+      setModal("setup");
+      return;
+    }
+    void run(async () => {
+      await login();
+    });
+  }
   const nav = [
     ["home", "오늘의 숲", House],
     ["prayer", "기도 모아보기", Heart],
@@ -866,11 +883,7 @@ function App() {
             ) : (
               <button
                 aria-label="Google 로그인"
-                onClick={() =>
-                  run(async () => {
-                    await login();
-                  })
-                }
+                onClick={startGoogleLogin}
               >
                 <ChevronRight size={18} />
               </button>
@@ -896,21 +909,25 @@ function App() {
             {!signed && (
               <button
                 className="google-login"
-                aria-label="Google로 가입·로그인"
+                aria-label={
+                  demoPreview
+                    ? "체험 모드 종료 후 실제 사이트 열기"
+                    : connected
+                      ? "Google로 가입·로그인"
+                      : "Firebase 연결 상태 확인"
+                }
                 disabled={busy || !loaded}
-                onClick={() => {
-                  if (!connected) setModal("setup");
-                  else
-                    run(async () => {
-                      await login();
-                    });
-                }}
+                onClick={startGoogleLogin}
               >
                 <span className="google-g" aria-hidden="true">
                   G
                 </span>
-                <span className="google-label">Google로 가입·로그인</span>
-                <span className="google-short">Google로 시작</span>
+                <span className="google-label">
+                  {demoPreview ? "체험 종료 · 실제 사이트로 이동" : connected ? "Google로 가입·로그인" : "연결 상태 확인"}
+                </span>
+                <span className="google-short">
+                  {demoPreview ? "체험 종료" : connected ? "Google로 시작" : "연결 확인"}
+                </span>
               </button>
             )}
             {signed && (
@@ -1946,7 +1963,9 @@ function App() {
                 <p>
                   {connected
                     ? "Firebase가 연결되어 있어요."
-                    : "현재는 체험 모드입니다. Google 로그인과 실제 팀 공유는 아직 연결되지 않았어요."}
+                    : demoPreview
+                      ? "현재 체험용 링크로 접속했어요. 실제 사이트로 이동한 다음 Google 로그인을 누르면 됩니다. 체험 기록은 현재 브라우저에 그대로 남아요."
+                      : "이 사이트의 Firebase 연결 설정을 확인해야 해요. 지금은 실제 로그인과 팀 공유를 사용할 수 없어요."}
                 </p>
                 <div className="panel">
                   <h3>나만의 비밀</h3>
@@ -1998,14 +2017,14 @@ function App() {
                 {!signed && (
                   <button
                     className="primary full"
-                    disabled={busy || !connected}
-                    onClick={() =>
-                      run(async () => {
-                        await login();
-                      })
-                    }
+                    disabled={busy || (!connected && !demoPreview)}
+                    onClick={startGoogleLogin}
                   >
-                    Google로 로그인
+                    {demoPreview
+                      ? "체험 종료 · 실제 사이트로 이동"
+                      : connected
+                        ? "Google로 로그인"
+                        : "Firebase 연결 필요"}
                   </button>
                 )}
               </>
