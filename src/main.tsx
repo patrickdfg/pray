@@ -390,6 +390,8 @@ function App() {
         update,
         setFeedMeta,
         (e) => notify(escError(e)),
+        undefined,
+        usableTeams,
       );
       feedRef.current = f;
       return () => {
