@@ -43,6 +43,7 @@ import {
 } from "./domain";
 import {
   connected,
+  localDemo,
   db,
   sessionUser,
   guestLogin,
@@ -65,7 +66,7 @@ import { pagedEntryFeed, usePagedRows, type EntryFeed } from "./paging";
 import { LiveEntry, Participants } from "./live-entry";
 import { flagSharedError } from "./quota";
 const uid = () => crypto.randomUUID();
-const demoPreview = new URLSearchParams(location.search).has("demo");
+const demoPreview = localDemo;
 const escError = (e: unknown) => {
   flagSharedError(e);
   const messages: Record<string, string> = {
@@ -2335,4 +2336,32 @@ function Metric({
     </div>
   );
 }
-createRoot(document.getElementById("root")!).render(<App />);
+function ConnectionUnavailable() {
+  return (
+    <main
+      style={{
+        minHeight: "100dvh",
+        padding: "24px",
+        display: "grid",
+        placeItems: "center",
+        background: "#fffaf5",
+        color: "#5b454d",
+        textAlign: "center",
+      }}
+    >
+      <section style={{ maxWidth: 440 }}>
+        <h1>기도숲 연결을 확인해 주세요</h1>
+        <p>
+          실제 계정과 기도 기록을 불러올 수 있도록 서비스 연결 설정을
+          확인하는 중이에요. 관리자에게 알려 주세요.
+        </p>
+        <button className="primary" onClick={() => location.reload()}>
+          다시 확인하기
+        </button>
+      </section>
+    </main>
+  );
+}
+createRoot(document.getElementById("root")!).render(
+  connected || localDemo ? <App /> : <ConnectionUnavailable />,
+);
