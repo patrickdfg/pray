@@ -165,6 +165,12 @@ function App() {
   useEffect(
     () =>
       watchAuth(async (user) => {
+        // Account changes must not retain another account's team/scope selection.
+        setLegacyView(false);
+        setShareTeam("");
+        setItems([]);
+        setMembers([]);
+        setTeam("");
         setSigned(!!user);
         setAnonymous(!!user?.isAnonymous);
         setLoaded(true);
