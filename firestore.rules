@@ -42,7 +42,8 @@ service cloud.firestore {
      && validKey(chosen)
      && ((ids == oldIds && chosen in ids) || (ids == oldIds.concat([chosen]) && !(chosen in oldIds))
        || (oldIds == [] && ids == [] && resource.data.get('activeCircle','') == ''
-           && getAfter(/databases/$(database)/documents/circles/$(chosen)).data.director == me()))
+           && (getAfter(/databases/$(database)/documents/circles/$(chosen)).data.director == me()
+             || getAfter(/databases/$(database)/documents/circles/$(chosen)/requests/$(me())).data.uid == me())))
      && (exists(/databases/$(database)/documents/circles/$(chosen)/members/$(me()))
       || getAfter(/databases/$(database)/documents/circles/$(chosen)).data.director == me()
       || getAfter(/databases/$(database)/documents/circles/$(chosen)/requests/$(me())).data.uid == me());
