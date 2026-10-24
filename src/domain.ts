@@ -36,6 +36,7 @@ export type Profile = {
   uid: string;
   name: string;
   activeCircle?: string;
+  circleIds?: string[];
   xp: number;
   coins: number;
   decorations?: string[];
